@@ -1,0 +1,2463 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rechnungstool</title>
+<meta name="description" content="Rechnungen ohne Reibung: Dashboard mit offenen und bezahlten Rechnungen, Schritt-für-Schritt-Assistent, Profile und Kunden gespeichert, fertige Rechnung nach § 14 UStG als PDF.">
+<style>
+  /* =====================================================================
+     Design-Tokens · Farbwelt aus dem Marken-Blau der Rechnung (#1f3864)
+     abgeleitet, OKLCH, Hue 262. color-scheme: dark färbt native
+     Scrollbalken, Datepicker und Formularelemente dunkel ein.
+     ===================================================================== */
+  :root {
+    color-scheme: dark;
+
+    --bg:        oklch(0.16 0.018 262);
+    --surface:   oklch(0.205 0.022 262);
+    --raised:    oklch(0.245 0.026 262);
+    --border:    oklch(0.31 0.024 262);
+    --border-soft: oklch(0.26 0.022 262);
+
+    --ink:       oklch(0.94 0.008 262);
+    --muted:     oklch(0.73 0.02 262);
+    --faint:     oklch(0.60 0.02 262);
+
+    --accent:        oklch(0.66 0.115 262);
+    --accent-strong: oklch(0.47 0.105 262);
+    --accent-ink:    oklch(0.85 0.06 262);
+
+    --ok:   oklch(0.78 0.125 155);
+    --warn: oklch(0.82 0.115 85);
+    --bad:  oklch(0.74 0.15 25);
+
+    --sheet-accent: #1f3864;   /* bleibt: Druck-Identität der Rechnung */
+    --sheet-ink:    #171a21;
+    --sheet-muted:  #4b5565;
+    --sheet-line:   #d9dde4;
+    --sheet-line-strong: #8b93a1;
+    --sheet-head:   #eef1f5;
+
+    --r-s: 7px;
+    --r-m: 10px;
+    --r-l: 14px;
+
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+    --z-sticky: 10;
+    --z-modal: 50;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  ::selection { background: oklch(0.47 0.105 262 / 0.55); }
+
+  /* Dezente Scrollbalken, passend zur Fläche */
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+
+  /* =====================================================================
+     App-Leiste
+     ===================================================================== */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 22px;
+    background: color-mix(in oklab, var(--bg) 86%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .wordmark {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .wordmark::before {
+    content: "";
+    width: 9px; height: 12px;
+    background: var(--accent);
+    border-radius: 2px 5px 2px 2px;   /* angedeutete Blattecke */
+    display: inline-block;
+  }
+
+  .topbar .spacer { flex: 1; }
+
+  .storage-note {
+    flex-basis: 100%;
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--warn);
+  }
+  .storage-note[hidden] { display: none; }
+
+  /* =====================================================================
+     Bedienelemente
+     ===================================================================== */
+  .btn {
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-s);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: transform 120ms var(--ease-out), border-color 140ms ease, background-color 140ms ease;
+  }
+  .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+  .btn.ghost   { background: transparent; }
+  .btn.danger  { color: var(--bad); }
+  .btn.small   { padding: 5px 10px; font-size: 12.5px; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .btn:not(:disabled):hover { border-color: var(--accent); }
+    .btn.primary:not(:disabled):hover { background: oklch(0.53 0.11 262); border-color: oklch(0.53 0.11 262); }
+  }
+  .btn:not(:disabled):active { transform: scale(0.97); }
+
+  :is(.btn, select, input, summary, [role="radio"], .inv-row):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  select, input[type="text"], input[type="password"], input[type="date"], input[type="number"] {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-s);
+    padding: 8px 10px;
+    width: 100%;
+    transition: border-color 140ms ease;
+  }
+  :is(select, input):hover { border-color: var(--accent); }
+  input[aria-invalid="true"] { border-color: var(--bad); }
+
+  input[type="checkbox"] { accent-color: var(--accent-strong); width: 15px; height: 15px; }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+  .field-error { margin: 4px 0 0; font-size: 12px; color: var(--bad); }
+  .field-error:empty { display: none; }
+
+  .num { font-variant-numeric: tabular-nums; }
+  .w-auto { width: auto; }
+
+  /* =====================================================================
+     Ansichten
+     ===================================================================== */
+  .view { display: none; }
+  body[data-view="dashboard"] #view-dashboard,
+  body[data-view="wizard"]    #view-wizard,
+  body[data-view="detail"]    #view-detail { display: block; }
+
+  .container { max-width: 1040px; margin: 0 auto; padding: 28px 22px 64px; }
+
+  @keyframes view-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .view > .container { animation: view-in 200ms var(--ease-out); }
+
+  /* =====================================================================
+     Dashboard
+     ===================================================================== */
+  .dash-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .dash-head h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+  .dash-head .sub { margin: 3px 0 0; font-size: 13px; color: var(--muted); }
+
+  /* Kennzahlen: eine ruhige Leiste mit Haarlinien statt Karten-Trio */
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 26px 0 6px;
+    border-block: 1px solid var(--border-soft);
+  }
+  .stat {
+    flex: 1 1 160px;
+    padding: 16px 22px 16px 0;
+    min-width: 150px;
+  }
+  .stat + .stat { border-left: 1px solid var(--border-soft); padding-left: 22px; }
+  .stat .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0;
+  }
+  .stat .value {
+    margin: 5px 0 0;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .stat .hint { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+  .stat .hint .overdue { color: var(--bad); font-weight: 600; }
+
+  /* Filter */
+  .filters {
+    display: flex;
+    gap: 4px;
+    margin: 22px 0 10px;
+    border-bottom: 1px solid var(--border-soft);
+    overflow-x: auto;
+  }
+  .filter {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 10px 9px;
+    margin-bottom: -1px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 140ms ease, border-color 140ms ease;
+  }
+  .filter[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  @media (hover: hover) and (pointer: fine) { .filter:hover { color: var(--ink); } }
+  .filter .count { color: var(--faint); font-weight: 500; margin-left: 4px; }
+
+  /* Rechnungsliste: typografische Zeilen statt Karten */
+  .inv-list { list-style: none; margin: 0; padding: 0; }
+
+  .inv-row {
+    display: grid;
+    grid-template-columns: 110px 1fr auto auto;
+    grid-template-areas: "no cust amount status";
+    align-items: center;
+    gap: 6px 18px;
+    padding: 13px 10px;
+    margin: 0 -10px;
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: var(--r-s);
+    cursor: pointer;
+    transition: background-color 140ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .inv-row:hover { background: var(--surface); }
+    .inv-row:hover .row-actions { opacity: 1; }
+  }
+  .inv-row:focus-visible .row-actions,
+  .inv-row:focus-within .row-actions { opacity: 1; }
+
+  .inv-row .no    { grid-area: no; font-weight: 600; font-size: 13.5px; }
+  .inv-row .cust  { grid-area: cust; min-width: 0; display: block; }
+  .inv-row .cust .name { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inv-row .cust .date { display: block; font-size: 12px; color: var(--faint); }
+  .inv-row .amount { grid-area: amount; font-weight: 700; font-size: 14.5px; text-align: right; }
+  .inv-row .status-col { grid-area: status; display: flex; align-items: center; gap: 10px; justify-content: flex-end; min-width: 172px; }
+
+  @media (max-width: 640px) {
+    .inv-row { grid-template-columns: 1fr auto; grid-template-areas: "no amount" "cust status"; }
+    .inv-row .status-col { min-width: 0; }
+  }
+
+  .row-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 140ms ease; }
+  @media (hover: none), (pointer: coarse) { .row-actions { opacity: 1; } }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 3px 9px;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.draft   { color: var(--muted); background: oklch(0.73 0.02 262 / 0.12); }
+  .badge.open    { color: var(--warn);  background: oklch(0.82 0.115 85 / 0.13); }
+  .badge.paid    { color: var(--ok);    background: oklch(0.78 0.125 155 / 0.13); }
+  .badge.overdue { color: var(--bad);   background: oklch(0.74 0.15 25 / 0.14); }
+
+  /* Zeilen-Einzug beim ersten Rendern: kurzer Stagger, rein dekorativ */
+  .inv-list.enter .inv-row {
+    opacity: 0;
+    transform: translateY(5px);
+    animation: view-in 220ms var(--ease-out) forwards;
+    animation-delay: calc(var(--i) * 35ms);
+  }
+
+  /* Leere Zustände laden zum Handeln ein */
+  .empty {
+    margin: 36px 0;
+    padding: 44px 24px;
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-l);
+  }
+  .empty h2 { font-size: 16px; font-weight: 650; }
+  .empty p { margin: 8px auto 18px; max-width: 46ch; color: var(--muted); font-size: 13.5px; }
+
+  /* =====================================================================
+     Wizard
+     ===================================================================== */
+  .wiz-layout { display: grid; grid-template-columns: 1fr; gap: 36px; }
+  @media (min-width: 1180px) {
+    .wiz-layout { grid-template-columns: minmax(0, 620px) 300px; justify-content: center; }
+  }
+
+  .wiz-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .wiz-top .title { margin: 0; font-size: 13px; color: var(--muted); }
+  .wiz-top .title strong { color: var(--ink); font-weight: 650; }
+
+  /* Stepper: echte Sequenz, daher tragen Nummern hier Information */
+  .stepper {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 26px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .step-pill {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--faint);
+    background: none;
+    border: none;
+    border-radius: 99px;
+    padding: 6px 12px;
+    white-space: nowrap;
+    cursor: default;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: color 140ms ease, background-color 140ms ease;
+  }
+  .step-pill .n {
+    width: 18px; height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+  }
+  .step-pill[data-state="done"] { color: var(--muted); cursor: pointer; }
+  .step-pill[data-state="done"] .n { border-color: transparent; background: var(--raised); color: var(--accent-ink); }
+  .step-pill[data-state="current"] { color: var(--ink); background: var(--surface); }
+  .step-pill[data-state="current"] .n { border-color: transparent; background: var(--accent-strong); color: #fff; }
+  @media (hover: hover) and (pointer: fine) {
+    .step-pill[data-state="done"]:hover { color: var(--ink); }
+  }
+
+  .wiz-card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-l);
+    padding: 26px 26px 24px;
+  }
+  .wiz-card h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .wiz-card .lead { margin: 6px 0 20px; font-size: 13.5px; color: var(--muted); max-width: 58ch; }
+
+  .wiz-step { animation: view-in 190ms var(--ease-out); }
+
+  .wiz-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
+  .field { min-width: 0; }
+  .mt { margin-top: 14px; }
+
+  /* Auswahl-Listen (Profil, Kunde) als ruhige Options-Zeilen */
+  .choice-list { display: grid; gap: 8px; margin: 0 0 4px; }
+  .choice {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-m);
+    cursor: pointer;
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) { .choice:hover { border-color: var(--accent); } }
+  .choice[aria-checked="true"] { border-color: var(--accent); background: color-mix(in oklab, var(--accent-strong) 14%, var(--bg)); }
+  .choice .dot {
+    width: 15px; height: 15px;
+    border: 1.5px solid var(--border);
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 140ms ease;
+  }
+  .choice[aria-checked="true"] .dot { border-color: var(--accent); }
+  .choice[aria-checked="true"] .dot::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .choice .c-main { min-width: 0; }
+  .choice .c-title { display: block; font-weight: 650; font-size: 14px; }
+  .choice .c-sub { display: block; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .choice .c-edit { margin-left: auto; flex-shrink: 0; }
+
+  /* Positionen im Wizard */
+  .wpos { border-bottom: 1px solid var(--border-soft); padding: 14px 0; }
+  .wpos:first-of-type { border-top: 1px solid var(--border-soft); }
+  .wpos-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .wpos-head .wpos-n { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; }
+  .wpos .grid-pos { display: grid; grid-template-columns: minmax(0, 1fr) 84px 92px 130px; gap: 10px; }
+  .wpos .span2 { grid-column: 1 / -1; }
+  @media (max-width: 640px) { .wpos .grid-pos { grid-template-columns: 1fr 1fr; } }
+
+  .running-total { display: flex; justify-content: flex-end; gap: 14px; margin-top: 14px; font-size: 14px; }
+  .running-total strong { font-weight: 700; }
+
+  .inline-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink); margin: 0; }
+
+  /* Zusammenfassung (Schritt 6) */
+  .review-check { border-radius: var(--r-m); padding: 12px 14px; font-size: 13.5px; margin: 14px 0 18px; }
+  .review-check.ok   { background: oklch(0.78 0.125 155 / 0.12); color: var(--ok); }
+  .review-check.miss { background: oklch(0.74 0.15 25 / 0.12); color: var(--bad); }
+
+  .finish-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+
+  /* Live-Miniatur des Blatts (Signatur-Element, nur breite Screens) */
+  .wiz-preview { display: none; }
+  @media (min-width: 1180px) {
+    .wiz-preview { display: block; position: sticky; top: 86px; }
+  }
+  .wiz-preview .cap {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 10px;
+  }
+  .mini-holder {
+    width: 300px;
+    height: 424px;
+    overflow: hidden;
+    border-radius: 6px;
+    box-shadow: 0 18px 44px rgb(0 0 0 / 0.5);
+  }
+  .mini-holder .sheet {
+    transform: scale(0.3778);
+    transform-origin: top left;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  /* =====================================================================
+     Detailansicht
+     ===================================================================== */
+  .detail-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .detail-bar .spacer { flex: 1; }
+  .detail-bar .meta { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+
+  .sheet-holder { overflow-x: auto; padding-bottom: 8px; }
+
+  /* =====================================================================
+     Dialoge
+     ===================================================================== */
+  dialog {
+    width: min(640px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    border: 1px solid var(--border);
+    border-radius: var(--r-l);
+    background: var(--surface);
+    color: var(--ink);
+    padding: 24px;
+    z-index: var(--z-modal);
+  }
+  dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+  dialog h2 { font-size: 16px; margin-bottom: 16px; }
+  .dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .dialog-actions.tight { margin-top: 0; }
+  .dialog-actions .spacer { flex: 1; }
+  .dialog-text { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+  .file-btn { display: inline-block; }
+  .file-btn input { display: none; }
+
+  /* =====================================================================
+     Anmeldung + Cloud-Status
+     ===================================================================== */
+  body[data-view="auth"] #view-auth { display: block; }
+  .auth-wrap { display: flex; justify-content: center; padding-top: 9vh; }
+  .auth-card {
+    width: min(420px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-l);
+    padding: 28px 26px;
+  }
+  .auth-card h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .auth-lead { margin: 8px 0 20px; font-size: 13.5px; color: var(--muted); }
+  .auth-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .auth-note { margin: 12px 0 0; font-size: 12.5px; color: var(--muted); }
+  .auth-note:empty { display: none; }
+  .topbar-status { font-size: 12px; color: var(--faint); }
+  .user-chip { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .user-chip[hidden] { display: none; }
+
+  /* =====================================================================
+     Das A4-Blatt (Druck-Identität, unverändert hell)
+     ===================================================================== */
+  .sheet {
+    width: 210mm;
+    min-height: 296mm;
+    margin: 0 auto;
+    padding: 15mm 16mm 12mm 18mm;
+    background: #fff;
+    color: var(--sheet-ink);
+    border-radius: 3px;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .sheet :where(p, h2) { margin: 0; }
+  .sheet .hidden { display: none !important; }
+
+  .brand-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+  .brand-name { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; color: var(--sheet-accent); }
+  .brand-tagline { margin-top: 2px; font-size: 11.5px; color: var(--sheet-muted); }
+  .brand-contact { text-align: right; font-size: 10.5px; color: var(--sheet-muted); line-height: 1.5; flex-shrink: 0; font-style: normal; }
+  .brand-rule { height: 2px; background: var(--sheet-accent); margin: 10px 0 22px; }
+  .sender-line { font-size: 9px; color: var(--sheet-muted); margin-bottom: 8px; }
+
+  .meta-row { display: flex; justify-content: space-between; gap: 32px; }
+  .address { font-size: 13.5px; line-height: 1.55; max-width: 78mm; }
+  .address .recipient-name { font-weight: 600; }
+  .address .country { font-size: 11px; color: var(--sheet-muted); margin-top: 4px; }
+
+  .smeta {
+    display: grid;
+    grid-template-columns: auto minmax(34mm, auto);
+    column-gap: 16px;
+    row-gap: 3px;
+    align-content: start;
+    margin: 0;
+    font-size: 12.5px;
+  }
+  .smeta dt { color: var(--sheet-muted); }
+  .smeta dd { margin: 0; }
+
+  .subject { margin-top: 30px; font-size: 17px; font-weight: 700; color: var(--sheet-accent); }
+  .letter { margin-top: 12px; }
+  .letter p + p { margin-top: 8px; }
+
+  .items { width: 100%; margin-top: 16px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .items caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .items th {
+    text-align: left; font-size: 11px; font-weight: 600;
+    background: var(--sheet-head); padding: 7px 8px;
+    border-top: 1.5px solid var(--sheet-line-strong); border-bottom: 1px solid var(--sheet-line);
+  }
+  .items td { padding: 8px; border-bottom: 1px solid var(--sheet-line); vertical-align: top; font-size: 12.5px; }
+  .items tbody tr:last-child td { border-bottom: 1.5px solid var(--sheet-line-strong); }
+  .items .c-pos   { width: 8mm;  text-align: center; color: var(--sheet-muted); }
+  .items .c-qty   { width: 14mm; text-align: center; }
+  .items .c-unit  { width: 16mm; text-align: center; }
+  .items .c-price { width: 26mm; text-align: right; }
+  .items .c-total { width: 26mm; text-align: right; }
+  .items th.c-pos, .items th.c-qty, .items th.c-unit { text-align: center; }
+  .items th.c-price, .items th.c-total { text-align: right; }
+
+  .totals-wrap { display: flex; flex-direction: column; align-items: flex-end; margin-top: 14px; }
+  .totals {
+    display: grid;
+    grid-template-columns: auto 30mm;
+    column-gap: 20px;
+    row-gap: 5px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .totals .grand { font-weight: 700; border-top: 1.5px solid var(--sheet-line-strong); padding-top: 6px; }
+  .ku-note { margin-top: 8px; font-size: 11px; text-align: right; }
+  .skonto  { margin-top: 8px; font-size: 10.5px; font-style: italic; color: var(--sheet-muted); text-align: right; }
+
+  body[data-mode="regel"] .only-ku { display: none !important; }
+  body[data-mode="ku"] .only-regel { display: none !important; }
+
+  .payment { margin-top: 18px; }
+  .thanks  { margin-top: 10px; }
+  .regards { margin-top: 22px; }
+  .signature { margin-top: 26px; }
+
+  .sheet-foot {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--sheet-line-strong);
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    font-size: 9.5px;
+    line-height: 1.6;
+    color: var(--sheet-muted);
+  }
+  .sheet-foot .foot-title { font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    .view > .container, .wiz-step, .inv-list.enter .inv-row { animation: none; opacity: 1; transform: none; }
+  }
+
+  /* =====================================================================
+     Druck: nur das Blatt, in Originalgröße
+     ===================================================================== */
+  @page { size: A4; margin: 0; }
+
+  @media print {
+    body { background: #fff; }
+    body * { visibility: hidden; }
+    .wiz-preview { display: block; }
+    .sheet, .sheet * { visibility: visible; }
+    .sheet {
+      position: absolute;
+      left: 0; top: 0;
+      margin: 0;
+      transform: none !important;
+      width: 210mm;
+      min-height: 296mm;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .items th, .brand-rule { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body data-view="dashboard" data-mode="regel">
+
+  <header class="topbar">
+    <button type="button" class="wordmark" id="btn-home">Rechnungstool</button>
+    <span class="spacer"></span>
+    <span class="topbar-status" id="sync-note" aria-live="polite"></span>
+    <span class="user-chip" id="user-chip" hidden><span id="user-email"></span><button type="button" class="btn ghost small" id="btn-logout">Abmelden</button></span>
+    <button type="button" class="btn ghost" id="btn-data">Daten</button>
+    <button type="button" class="btn primary" id="btn-new-top">+ Neue Rechnung</button>
+    <p class="storage-note" id="storage-note" hidden>Speichern im Browser ist hier nicht verfügbar – alles gilt nur für diese Sitzung. Über „Daten“ kannst du exportieren.</p>
+  </header>
+
+  <!-- ================= Anmeldung (nur im Cloud-Modus) ================= -->
+  <section class="view" id="view-auth">
+    <div class="container auth-wrap">
+      <div class="auth-card">
+        <h1>Anmelden</h1>
+        <p class="auth-lead">Deine Profile, Kunden und Rechnungen liegen in deiner eigenen Supabase-Datenbank – von jedem Gerät erreichbar.</p>
+        <div class="field"><label for="auth-email">E-Mail</label><input type="text" id="auth-email" autocomplete="email" inputmode="email"></div>
+        <div class="field mt"><label for="auth-pass">Passwort</label><input type="password" id="auth-pass" autocomplete="current-password"></div>
+        <p class="field-error" id="auth-error"></p>
+        <div class="auth-actions">
+          <button type="button" class="btn primary" id="btn-login">Anmelden</button>
+          <button type="button" class="btn ghost" id="btn-register">Neu registrieren</button>
+        </div>
+        <p class="auth-note" id="auth-note"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Dashboard ================= -->
+  <section class="view" id="view-dashboard">
+    <div class="container">
+      <div class="dash-head">
+        <div>
+          <h1>Übersicht</h1>
+          <p class="sub" id="dash-sub"></p>
+        </div>
+        <div class="field w-auto">
+          <select id="profile-filter" aria-label="Profil"></select>
+        </div>
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat">
+          <p class="label">Offen</p>
+          <p class="value num" id="stat-open-sum">0,00&nbsp;€</p>
+          <p class="hint" id="stat-open-hint"></p>
+        </div>
+        <div class="stat">
+          <p class="label">Bezahlt <span id="stat-year"></span></p>
+          <p class="value num" id="stat-paid-sum">0,00&nbsp;€</p>
+          <p class="hint" id="stat-paid-hint"></p>
+        </div>
+        <div class="stat">
+          <p class="label">Entwürfe</p>
+          <p class="value num" id="stat-draft-count">0</p>
+          <p class="hint">noch nicht abgeschlossen</p>
+        </div>
+      </div>
+
+      <div class="filters" role="group" aria-label="Rechnungen filtern" id="filters">
+        <button type="button" class="filter" data-filter="all" aria-pressed="true">Alle<span class="count"></span></button>
+        <button type="button" class="filter" data-filter="draft" aria-pressed="false">Entwürfe<span class="count"></span></button>
+        <button type="button" class="filter" data-filter="open" aria-pressed="false">Offen<span class="count"></span></button>
+        <button type="button" class="filter" data-filter="paid" aria-pressed="false">Bezahlt<span class="count"></span></button>
+      </div>
+
+      <ul class="inv-list" id="inv-list"></ul>
+
+      <div class="empty" id="empty-onboard" hidden>
+        <h2>Willkommen! Lege zuerst ein Profil an.</h2>
+        <p>Ein Profil enthält deine Firmendaten, Bankverbindung und Steuernummern – einmal eintragen, danach füllt sich jede Rechnung von selbst.</p>
+        <button type="button" class="btn primary" id="btn-onboard-profile">Profil anlegen</button>
+      </div>
+
+      <div class="empty" id="empty-invoices" hidden>
+        <h2>Noch keine Rechnungen</h2>
+        <p>Der Assistent führt dich in fünf kurzen Schritten zur fertigen Rechnung – Profil, Kunde, Eckdaten, Positionen, Optionen. Nichts wird übersehen.</p>
+        <button type="button" class="btn primary" id="btn-empty-new">Erste Rechnung anlegen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Wizard ================= -->
+  <section class="view" id="view-wizard">
+    <div class="container">
+      <div class="wiz-layout">
+        <div>
+          <div class="wiz-top">
+            <p class="title" id="wiz-title"><strong>Neue Rechnung</strong></p>
+            <button type="button" class="btn ghost small" id="wiz-cancel">Abbrechen</button>
+          </div>
+          <nav class="stepper" id="stepper" aria-label="Schritte"></nav>
+          <div class="wiz-card">
+            <div id="wiz-body"></div>
+            <div class="wiz-nav">
+              <button type="button" class="btn ghost" id="wiz-back">Zurück</button>
+              <button type="button" class="btn primary" id="wiz-next">Weiter</button>
+            </div>
+          </div>
+        </div>
+        <aside class="wiz-preview" aria-hidden="true">
+          <p class="cap">Live-Vorschau</p>
+          <div class="mini-holder" id="mini-holder"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Detail ================= -->
+  <section class="view" id="view-detail">
+    <div class="container">
+      <div class="detail-bar">
+        <button type="button" class="btn ghost" id="detail-back">&#8592; Übersicht</button>
+        <span class="meta" id="detail-meta"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="detail-paid">Als bezahlt markieren</button>
+        <button type="button" class="btn" id="detail-edit">Bearbeiten</button>
+        <button type="button" class="btn" id="detail-dup">Duplizieren</button>
+        <button type="button" class="btn danger ghost" id="detail-delete">Löschen</button>
+        <button type="button" class="btn primary" id="detail-print">Drucken / PDF</button>
+      </div>
+      <div class="sheet-holder" id="detail-holder"></div>
+    </div>
+  </section>
+
+  <!-- ================= Das eine Blatt (wird je Ansicht umgehängt) ================= -->
+  <template id="sheet-template">
+    <main class="sheet" id="sheet">
+      <div class="brand-row">
+        <div>
+          <div class="brand-name" id="s-brand"></div>
+          <div class="brand-tagline" id="s-tagline"></div>
+        </div>
+        <address class="brand-contact">
+          <span class="line" id="s-street"></span><br>
+          <span class="line" id="s-zip"></span><br>
+          <span class="line" id="s-phone"></span><br>
+          <span class="line" id="s-mail"></span>
+        </address>
+      </div>
+      <div class="brand-rule"></div>
+      <p class="sender-line" id="s-senderline"></p>
+      <div class="meta-row">
+        <div class="address">
+          <div class="recipient-name" id="s-c-company"></div>
+          <div id="s-c-person"></div>
+          <div id="s-c-street"></div>
+          <div id="s-c-zip"></div>
+          <div class="country" id="s-c-country"></div>
+        </div>
+        <dl class="smeta">
+          <dt class="m-no">Rechnungsnummer:</dt>      <dd class="m-no" id="s-m-no"></dd>
+          <dt class="m-date">Rechnungsdatum:</dt>     <dd class="m-date" id="s-m-date"></dd>
+          <dt class="m-service">Leistungsdatum:</dt>  <dd class="m-service" id="s-m-service"></dd>
+          <dt class="m-custno">Kundennummer:</dt>     <dd class="m-custno" id="s-m-custno"></dd>
+          <dt class="m-tax">Steuernummer:</dt>        <dd class="m-tax" id="s-m-tax"></dd>
+          <dt class="m-vatid">USt-IdNr.:</dt>         <dd class="m-vatid" id="s-m-vatid"></dd>
+        </dl>
+      </div>
+      <h2 class="subject">Rechnung Nr. <span id="s-no2"></span></h2>
+      <div class="letter">
+        <p>Sehr geehrte Damen und Herren,</p>
+        <p>vielen Dank für Ihren Auftrag. Vereinbarungsgemäß stellen wir Ihnen folgende Lieferungen und Leistungen in Rechnung:</p>
+      </div>
+      <table class="items">
+        <caption>Rechnungspositionen mit Menge, Einzelpreis und Gesamtbetrag</caption>
+        <thead>
+          <tr>
+            <th class="c-pos" scope="col">Pos.</th>
+            <th scope="col">Bezeichnung (Menge und Art der Leistung / Lieferung)</th>
+            <th class="c-qty" scope="col">Menge</th>
+            <th class="c-unit" scope="col">Einheit</th>
+            <th class="c-price" scope="col"><span class="only-regel">Einzelpreis (netto)</span><span class="only-ku">Einzelpreis</span></th>
+            <th class="c-total" scope="col"><span class="only-regel">Gesamt (netto)</span><span class="only-ku">Gesamt</span></th>
+          </tr>
+        </thead>
+        <tbody id="s-items"></tbody>
+      </table>
+      <div class="totals-wrap">
+        <div class="totals">
+          <span class="only-regel">Zwischensumme (netto)</span>
+          <span class="only-regel num" id="s-net"></span>
+          <span class="only-regel">zzgl. <span id="s-vatlabel">19</span>&nbsp;% Umsatzsteuer</span>
+          <span class="only-regel num" id="s-vat"></span>
+          <span class="grand only-regel">Rechnungsbetrag (brutto)</span>
+          <span class="grand only-ku">Rechnungsbetrag</span>
+          <span class="grand num" id="s-gross"></span>
+        </div>
+        <p class="ku-note only-ku">Gemäß § 19 UStG wird keine Umsatzsteuer berechnet (Steuerbefreiung für Kleinunternehmer).</p>
+        <p class="skonto" id="s-skonto"></p>
+      </div>
+      <p class="payment">Bitte überweisen Sie den Rechnungsbetrag ohne Abzug bis zum <span id="s-due"></span> (Zahlungsziel: <span id="s-days"></span> Tage nach Rechnungseingang) unter Angabe der Rechnungsnummer auf das unten genannte Konto.</p>
+      <p class="thanks">Vielen Dank für die gute Zusammenarbeit.</p>
+      <p class="regards">Mit freundlichen Grüßen</p>
+      <p class="signature" id="s-sign"></p>
+      <footer class="sheet-foot">
+        <div>
+          <div class="foot-title line" id="s-f-company"></div>
+          <div class="line" id="s-f-owner"></div>
+          <div class="line" id="s-f-street"></div>
+          <div class="line" id="s-f-zip"></div>
+        </div>
+        <div>
+          <div class="line" id="s-f-bank"></div>
+          <div class="line" id="s-f-iban"></div>
+          <div class="line" id="s-f-bic"></div>
+          <div class="line" id="s-f-holder"></div>
+        </div>
+        <div>
+          <div class="line" id="s-f-tax"></div>
+          <div class="line" id="s-f-vatid"></div>
+          <div class="line" id="s-f-register"></div>
+          <div class="line" id="s-f-mgmt"></div>
+        </div>
+      </footer>
+    </main>
+  </template>
+
+  <!-- ================= Profil-Dialog ================= -->
+  <dialog id="dlg-profile" aria-labelledby="dlg-profile-title">
+    <h2 id="dlg-profile-title">Profil</h2>
+    <div class="grid2">
+      <div class="field"><label for="p-label">Profilname (intern)</label><input type="text" id="p-label" placeholder="z. B. cloudwerk"></div>
+      <div class="field"><label for="p-company">Firmenname / Vor- und Nachname</label><input type="text" id="p-company"><p class="field-error" id="err-p-company"></p></div>
+      <div class="field"><label for="p-tagline">Zusatz (optional)</label><input type="text" id="p-tagline"></div>
+      <div class="field"><label for="p-owner">Inhaber/in (Unterschrift)</label><input type="text" id="p-owner"></div>
+      <div class="field"><label for="p-street">Straße Hausnummer</label><input type="text" id="p-street"></div>
+      <div class="field"><label for="p-zip">PLZ Ort</label><input type="text" id="p-zip"></div>
+      <div class="field"><label for="p-phone">Telefon</label><input type="text" id="p-phone"></div>
+      <div class="field"><label for="p-email">E-Mail</label><input type="text" id="p-email"></div>
+      <div class="field"><label for="p-bank">Bankname</label><input type="text" id="p-bank"></div>
+      <div class="field"><label for="p-holder">Kontoinhaber</label><input type="text" id="p-holder"></div>
+      <div class="field"><label for="p-iban">IBAN</label><input type="text" id="p-iban"></div>
+      <div class="field"><label for="p-bic">BIC</label><input type="text" id="p-bic"></div>
+      <div class="field"><label for="p-tax">Steuernummer</label><input type="text" id="p-tax"></div>
+      <div class="field"><label for="p-vatid">USt-IdNr.</label><input type="text" id="p-vatid"></div>
+      <div class="field"><label for="p-register">Registergericht, HRB (nur GmbH/UG)</label><input type="text" id="p-register"></div>
+      <div class="field"><label for="p-mgmt">Geschäftsführung (nur GmbH/UG)</label><input type="text" id="p-mgmt"></div>
+      <div class="field">
+        <label for="p-mode">Standard-Besteuerung</label>
+        <select id="p-mode">
+          <option value="regel">Mit Umsatzsteuer</option>
+          <option value="ku">Ohne USt (§ 19 UStG, Kleinunternehmer)</option>
+        </select>
+      </div>
+      <div class="field"><label for="p-vatrate">USt-Satz (%)</label><input type="number" id="p-vatrate" min="0" step="0.1" value="19"></div>
+      <div class="field"><label for="p-days">Zahlungsziel (Tage)</label><input type="number" id="p-days" min="0" step="1" value="14"></div>
+      <div class="field"><label for="p-skontopct">Skonto-Standard (%)</label><input type="number" id="p-skontopct" min="0" step="0.1" value="2"></div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger ghost" id="p-delete">Profil löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="p-cancel">Abbrechen</button>
+      <button type="button" class="btn primary" id="p-save">Profil speichern</button>
+    </div>
+  </dialog>
+
+  <!-- ================= Daten-Dialog ================= -->
+  <dialog id="dlg-data" aria-labelledby="dlg-data-title">
+    <h2 id="dlg-data-title">Daten sichern / laden</h2>
+    <p class="dialog-text">Im Cloud-Modus liegen deine Daten in deiner Supabase-Datenbank, im lokalen Modus nur in diesem Browser. Der JSON-Export dient als Backup oder für den Umzug. Unabhängig davon: Rechnungskopien gehören 8 Jahre ins Archiv (GoBD) – am einfachsten als PDF.</p>
+    <div class="dialog-actions tight">
+      <button type="button" class="btn" id="btn-export">Als JSON exportieren</button>
+      <label class="btn file-btn">JSON importieren<input type="file" id="file-import" accept="application/json"></label>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="data-close">Schließen</button>
+    </div>
+  </dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  // =====================================================================
+  // Cloud-Konfiguration (Supabase)
+  // Für den Cloud-Modus die beiden Werte aus deinem Supabase-Projekt
+  // eintragen (Project Settings → API). Siehe README, Schritt 4.
+  // Bleiben die Platzhalter stehen, läuft das Tool im lokalen Modus.
+  // =====================================================================
+  var SUPABASE_URL = "https://qggdvsnznokakqdrscvv.supabase.co";
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnZ2R2c256bm9rYWtxZHJzY3Z2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MDI1NjAsImV4cCI6MjA5OTQ3ODU2MH0.FWt1NFA-u5OtvAGzXrECpxkaeHqxunIrjNak0cI6_XM";
+  var SUPABASE_LIB = {
+    src: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.2/dist/umd/supabase.js",
+    integrity: "sha384-yifgV8iFWyp5cgu+V1G1rtlEHpEErPlL5fTrkUELIsWq0CIVDON2WP/NlXVJT3vO"
+  };
+
+  var cloud = { enabled: false, client: null, userId: null };
+
+  function cloudConfigured() {
+    if (window.__SUPABASE_TEST_CLIENT) return true;
+    return SUPABASE_URL.indexOf("https://") === 0 && SUPABASE_ANON_KEY.length > 30;
+  }
+
+  function loadSupabaseLib() {
+    return new Promise(function (resolve, reject) {
+      if (window.__SUPABASE_TEST_CLIENT || window.supabase) { resolve(); return; }
+      var sc = document.createElement("script");
+      sc.src = SUPABASE_LIB.src;
+      sc.integrity = SUPABASE_LIB.integrity;
+      sc.crossOrigin = "anonymous";
+      sc.onload = resolve;
+      sc.onerror = function () { reject(new Error("Supabase-Bibliothek konnte nicht geladen werden")); };
+      document.head.appendChild(sc);
+    });
+  }
+
+  // =====================================================================
+  // Basis
+  // =====================================================================
+
+  var fmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+  var fmtDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function uid() { return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); }
+
+  function parseDE(s) {
+    s = (s || "").replace(/[^\d,.\-]/g, "");
+    if (!s) return 0;
+    if (s.indexOf(",") !== -1) s = s.replace(/\./g, "").replace(",", ".");
+    var n = parseFloat(s);
+    return isFinite(n) ? n : 0;
+  }
+
+  function todayISO() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  function isoToDate(iso) {
+    if (!iso) return null;
+    var d = new Date(iso + "T12:00:00");
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function addDays(date, days) {
+    var d = new Date(date.getTime());
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  // =====================================================================
+  // Speicher + Migration v1 -> v2
+  // =====================================================================
+
+  var STATE_KEY = "rechnungstool:v1"; // Schlüssel bleibt stabil, Inhalt trägt "version"
+  var store = (function () {
+    try {
+      var probe = "__rt_probe";
+      window.localStorage.setItem(probe, "1");
+      window.localStorage.removeItem(probe);
+      return window.localStorage;
+    } catch (e) { return null; }
+  })();
+
+  if (!store) $("storage-note").hidden = false;
+
+  function blankState() {
+    return { version: 2, profiles: [], customers: [], invoices: [], activeProfileId: null };
+  }
+
+  function migrate(parsed) {
+    if (!parsed || !Array.isArray(parsed.profiles)) return blankState();
+    if (parsed.version === 1) {
+      parsed.version = 2;
+      parsed.invoices = [];
+    }
+    if (parsed.version !== 2) return blankState();
+    if (!Array.isArray(parsed.customers)) parsed.customers = [];
+    if (!Array.isArray(parsed.invoices)) parsed.invoices = [];
+    return parsed;
+  }
+
+  function loadState() {
+    if (!store) return blankState();
+    try {
+      var raw = store.getItem(STATE_KEY);
+      return raw ? migrate(JSON.parse(raw)) : blankState();
+    } catch (e) { return blankState(); }
+  }
+
+  function persist() {
+    if (cloud.enabled) return; // im Cloud-Modus schreiben die db*-Funktionen gezielt
+    if (!store) return;
+    try { store.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* voll oder gesperrt */ }
+  }
+
+  var state = loadState();
+
+  // =====================================================================
+  // Datenzugriff: lokal (localStorage) oder Cloud (Supabase, granular)
+  // =====================================================================
+
+  function setSync(msg, isError) {
+    var n = $("sync-note");
+    n.textContent = msg || "";
+    n.style.color = isError ? "var(--bad)" : "";
+    if (msg && !isError) {
+      window.clearTimeout(setSync._t);
+      setSync._t = window.setTimeout(function () { n.textContent = ""; }, 2500);
+    }
+  }
+
+  function dbWrite(table, row) {
+    if (!cloud.enabled) { persist(); return; }
+    cloud.client.from(table)
+      .upsert({ id: row.id, user_id: cloud.userId, data: row })
+      .then(function (res) {
+        if (res && res.error) throw res.error;
+        setSync("Gespeichert \u2713");
+      })
+      .catch(function (e) {
+        setSync("Speichern fehlgeschlagen \u2013 Verbindung prüfen", true);
+        console.error("[Rechnungstool] Upsert " + table, e);
+      });
+  }
+
+  function dbDelete(table, id) {
+    if (!cloud.enabled) { persist(); return; }
+    cloud.client.from(table).delete().eq("id", id).eq("user_id", cloud.userId)
+      .then(function (res) {
+        if (res && res.error) throw res.error;
+        setSync("Gelöscht \u2713");
+      })
+      .catch(function (e) {
+        setSync("Löschen fehlgeschlagen \u2013 Verbindung prüfen", true);
+        console.error("[Rechnungstool] Delete " + table, e);
+      });
+  }
+
+  function dbReplaceAll() {
+    if (!cloud.enabled) { persist(); return; }
+    var u = cloud.userId;
+    ["profiles", "customers", "invoices"].forEach(function (t) {
+      var rows = state[t].map(function (r) { return { id: r.id, user_id: u, data: r }; });
+      cloud.client.from(t).delete().eq("user_id", u)
+        .then(function () { return rows.length ? cloud.client.from(t).upsert(rows) : null; })
+        .then(function (res) {
+          if (res && res.error) throw res.error;
+          setSync("Import synchronisiert \u2713");
+        })
+        .catch(function (e) {
+          setSync("Import-Sync fehlgeschlagen", true);
+          console.error("[Rechnungstool] ReplaceAll " + t, e);
+        });
+    });
+  }
+
+  function dbSaveProfile(p)  { dbWrite("profiles", p); }
+  function dbSaveCustomer(c) { dbWrite("customers", c); }
+  function dbSaveInvoice(i)  { dbWrite("invoices", i); }
+
+  // =====================================================================
+  // Profile
+  // =====================================================================
+
+  var PROFILE_FIELDS = ["label", "company", "tagline", "owner", "street", "zip", "phone", "email",
+    "bank", "holder", "iban", "bic", "tax", "vatid", "register", "mgmt"];
+
+  function blankProfile() {
+    return {
+      id: uid(), label: "", company: "", tagline: "", owner: "", street: "", zip: "",
+      phone: "", email: "", bank: "", holder: "", iban: "", bic: "", tax: "", vatid: "",
+      register: "", mgmt: "", mode: "regel", vatRate: 19, paymentDays: 14,
+      skontoPercent: 2, counters: {}, lastFreeNumber: ""
+    };
+  }
+
+  function profileById(id) { return state.profiles.find(function (p) { return p.id === id; }) || null; }
+
+  function pad4(n) { return String(n).padStart(4, "0"); }
+
+  function suggestNumber(profile) {
+    if (!profile) return "";
+    var year = String(new Date().getFullYear());
+    if (profile.lastFreeNumber) {
+      var m = profile.lastFreeNumber.match(/^(.*?)(\d+)$/);
+      if (m) {
+        var next = String(parseInt(m[2], 10) + 1);
+        while (next.length < m[2].length) next = "0" + next;
+        return m[1] + next;
+      }
+    }
+    var counters = profile.counters || {};
+    return year + "-" + pad4((counters[year] || 0) + 1);
+  }
+
+  function registerUsedNumber(profile, value) {
+    if (!profile || !value) return;
+    var m = value.match(/^(\d{4})-(\d+)$/);
+    if (m) {
+      profile.counters = profile.counters || {};
+      var y = m[1], n = parseInt(m[2], 10);
+      profile.counters[y] = Math.max(profile.counters[y] || 0, n);
+      profile.lastFreeNumber = "";
+    } else {
+      profile.lastFreeNumber = value;
+    }
+    dbSaveProfile(profile);
+  }
+
+  // ---- Profil-Dialog ----
+
+  var dlgProfile = $("dlg-profile");
+  var editingProfileId = null;
+  var profileDialogDone = null; // Callback nach dem Speichern (z. B. aus dem Wizard)
+
+  function openProfileEditor(profile, done) {
+    editingProfileId = profile ? profile.id : null;
+    profileDialogDone = done || null;
+    var p = profile || blankProfile();
+    PROFILE_FIELDS.forEach(function (k) { $("p-" + k).value = p[k] || ""; });
+    $("p-mode").value = p.mode || "regel";
+    $("p-vatrate").value = p.vatRate != null ? p.vatRate : 19;
+    $("p-days").value = p.paymentDays != null ? p.paymentDays : 14;
+    $("p-skontopct").value = p.skontoPercent != null ? p.skontoPercent : 2;
+    $("err-p-company").textContent = "";
+    $("p-company").removeAttribute("aria-invalid");
+    $("p-delete").style.visibility = profile ? "visible" : "hidden";
+    if (typeof dlgProfile.showModal === "function" && !dlgProfile.open) dlgProfile.showModal();
+  }
+
+  function saveProfileFromDialog() {
+    if (!$("p-company").value.trim()) {
+      $("err-p-company").textContent = "Bitte einen Namen angeben – er erscheint auf der Rechnung.";
+      $("p-company").setAttribute("aria-invalid", "true");
+      $("p-company").focus();
+      return;
+    }
+    var isNew = !editingProfileId;
+    var p = isNew ? blankProfile() : profileById(editingProfileId);
+    if (!p) return;
+    PROFILE_FIELDS.forEach(function (k) { p[k] = $("p-" + k).value.trim(); });
+    p.mode = $("p-mode").value === "ku" ? "ku" : "regel";
+    p.vatRate = parseFloat($("p-vatrate").value) || 0;
+    p.paymentDays = parseInt($("p-days").value, 10) || 0;
+    p.skontoPercent = parseFloat($("p-skontopct").value) || 0;
+    if (isNew) state.profiles.push(p);
+    if (!state.activeProfileId) state.activeProfileId = p.id;
+    dbSaveProfile(p);
+    if (dlgProfile.open) dlgProfile.close();
+    var done = profileDialogDone;
+    profileDialogDone = null;
+    if (done) done(p);
+    else renderCurrentView();
+  }
+
+  function deleteProfileFromDialog() {
+    if (!editingProfileId) return;
+    var p = profileById(editingProfileId);
+    if (!p) return;
+    if (!window.confirm("Profil \u201E" + (p.label || p.company) + "\u201C wirklich löschen? Rechnungen bleiben erhalten.")) return;
+    state.profiles = state.profiles.filter(function (x) { return x.id !== editingProfileId; });
+    if (state.activeProfileId === editingProfileId) {
+      state.activeProfileId = state.profiles.length ? state.profiles[0].id : null;
+    }
+    dbDelete("profiles", editingProfileId);
+    if (dlgProfile.open) dlgProfile.close();
+    renderCurrentView();
+  }
+
+  // =====================================================================
+  // Rechnungen: Ableitungen
+  // =====================================================================
+
+  function computeTotals(inv) {
+    var net = 0;
+    (inv.positions || []).forEach(function (pos) {
+      if (pos.qty !== "" || pos.price !== "") net += parseDE(pos.qty) * parseDE(pos.price);
+    });
+    var vat = inv.mode === "ku" ? 0 : Math.round(net * ((inv.vatRate || 0) / 100) * 100) / 100;
+    return { net: net, vat: vat, gross: net + vat };
+  }
+
+  function dueDateOf(inv) {
+    var d = isoToDate(inv.date);
+    return d ? addDays(d, inv.paymentDays || 0) : null;
+  }
+
+  function isOverdue(inv) {
+    if (inv.status !== "open") return false;
+    var due = dueDateOf(inv);
+    if (!due) return false;
+    return due.getTime() < isoToDate(todayISO()).getTime();
+  }
+
+  function invoiceById(id) { return state.invoices.find(function (i) { return i.id === id; }) || null; }
+
+  // =====================================================================
+  // Blatt (eine Vorlage, wird je Ansicht umgehängt)
+  // =====================================================================
+
+  var sheet = document.importNode($("sheet-template").content, true).firstElementChild;
+
+  function mountSheet(container) {
+    if (sheet.parentNode !== container) container.appendChild(sheet);
+  }
+
+  function setLine(id, text) {
+    var n = $(id);
+    n.textContent = text || "";
+    if (n.classList.contains("line")) n.classList.toggle("hidden", !text);
+  }
+
+  function setMetaRow(cls, id, text) {
+    $(id).textContent = text || "";
+    sheet.querySelectorAll(".smeta ." + cls).forEach(function (n) {
+      n.classList.toggle("hidden", !text);
+    });
+  }
+
+  function renderSheet(inv) {
+    var p = profileById(inv.profileId) || blankProfile();
+    document.body.setAttribute("data-mode", inv.mode === "ku" ? "ku" : "regel");
+
+    $("s-brand").textContent = p.company;
+    $("s-tagline").textContent = p.tagline;
+    setLine("s-street", p.street);
+    setLine("s-zip", p.zip);
+    setLine("s-phone", p.phone ? "Tel.: " + p.phone : "");
+    setLine("s-mail", p.email ? "E-Mail: " + p.email : "");
+    $("s-senderline").textContent = [p.company, p.street, p.zip].filter(Boolean).join(" \u00b7 ");
+
+    var c = inv.customer || {};
+    $("s-c-company").textContent = c.company || "";
+    $("s-c-person").textContent = c.person || "";
+    $("s-c-street").textContent = c.street || "";
+    $("s-c-zip").textContent = c.zip || "";
+    $("s-c-country").textContent = c.country || "";
+
+    var date = isoToDate(inv.date);
+    setMetaRow("m-no", "s-m-no", inv.number);
+    setMetaRow("m-date", "s-m-date", date ? fmtDate.format(date) : "");
+    setMetaRow("m-service", "s-m-service", inv.service);
+    setMetaRow("m-custno", "s-m-custno", c.custno);
+    setMetaRow("m-tax", "s-m-tax", p.tax);
+    setMetaRow("m-vatid", "s-m-vatid", p.vatid);
+    $("s-no2").textContent = inv.number || "";
+
+    var tbody = $("s-items");
+    tbody.innerHTML = "";
+    (inv.positions || []).forEach(function (pos, i) {
+      var hasAmount = pos.qty !== "" || pos.price !== "";
+      var line = parseDE(pos.qty) * parseDE(pos.price);
+      var tr = document.createElement("tr");
+      [["c-pos", String(i + 1)],
+       ["", pos.desc || ""],
+       ["c-qty", pos.qty || ""],
+       ["c-unit", pos.unit || ""],
+       ["c-price num", pos.price !== "" ? fmt.format(parseDE(pos.price)) : ""],
+       ["c-total num", hasAmount ? fmt.format(line) : ""]].forEach(function (def) {
+        var td = document.createElement("td");
+        if (def[0]) td.className = def[0];
+        td.textContent = def[1];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    var t = computeTotals(inv);
+    $("s-vatlabel").textContent = String(inv.vatRate || 0).replace(".", ",");
+    $("s-net").textContent = fmt.format(t.net);
+    $("s-vat").textContent = fmt.format(t.vat);
+    $("s-gross").textContent = fmt.format(t.gross);
+
+    var sk = inv.skonto || {};
+    var skEl = $("s-skonto");
+    if (sk.on && date) {
+      var sdate = fmtDate.format(addDays(date, sk.days || 0));
+      skEl.textContent = "Bei Zahlung bis zum " + sdate + " gewähren wir " +
+        String(sk.pct || 0).replace(".", ",") + " % Skonto; Zahlbetrag dann " +
+        fmt.format(t.gross * (1 - (sk.pct || 0) / 100)) + ".";
+      skEl.classList.remove("hidden");
+    } else {
+      skEl.textContent = "";
+      skEl.classList.add("hidden");
+    }
+
+    $("s-days").textContent = String(inv.paymentDays || 0);
+    $("s-due").textContent = date ? fmtDate.format(addDays(date, inv.paymentDays || 0)) : "";
+    $("s-sign").textContent = p.owner || p.company;
+
+    setLine("s-f-company", p.company);
+    setLine("s-f-owner", p.owner ? "Inhaber/in: " + p.owner : "");
+    setLine("s-f-street", p.street);
+    setLine("s-f-zip", p.zip);
+    setLine("s-f-bank", p.bank ? "Bank: " + p.bank : "");
+    setLine("s-f-iban", p.iban ? "IBAN: " + p.iban : "");
+    setLine("s-f-bic", p.bic ? "BIC: " + p.bic : "");
+    setLine("s-f-holder", p.holder ? "Kontoinhaber: " + p.holder : "");
+    setLine("s-f-tax", p.tax ? "Steuernummer: " + p.tax : "");
+    setLine("s-f-vatid", p.vatid ? "USt-IdNr.: " + p.vatid : "");
+    setLine("s-f-register", p.register);
+    setLine("s-f-mgmt", p.mgmt ? "Geschäftsführung: " + p.mgmt : "");
+  }
+
+  // =====================================================================
+  // Pflichtangaben-Check (§ 14 Abs. 4 UStG)
+  // =====================================================================
+
+  function checkRequired(inv) {
+    var p = profileById(inv.profileId);
+    var c = inv.customer || {};
+    var positions = (inv.positions || []).filter(function (x) { return x.desc || x.qty || x.price; });
+    var missing = [];
+    if (!p || !p.company) missing.push("Absender-Name (Profil)");
+    if (!p || !p.street || !p.zip) missing.push("Absender-Anschrift (Profil)");
+    if (!p || (!p.tax && !p.vatid)) missing.push("Steuernummer oder USt-IdNr. (Profil)");
+    if (!c.company && !c.person) missing.push("Empfänger-Name");
+    if (!c.street || !c.zip) missing.push("Empfänger-Anschrift");
+    if (!inv.number) missing.push("Rechnungsnummer");
+    if (!inv.date) missing.push("Rechnungsdatum");
+    if (!inv.service) missing.push("Leistungsdatum");
+    if (!positions.length) missing.push("mindestens eine Position");
+    else if (positions.some(function (x) { return !x.desc || !x.qty || !x.price; })) missing.push("Positionen vollständig (Bezeichnung, Menge, Preis)");
+    return missing;
+  }
+
+  // =====================================================================
+  // Ansichten
+  // =====================================================================
+
+  function showView(name) {
+    document.body.setAttribute("data-view", name);
+    try { window.scrollTo(0, 0); } catch (e) { /* jsdom */ }
+  }
+  function currentView() { return document.body.getAttribute("data-view"); }
+  function renderCurrentView() {
+    var v = currentView();
+    if (v === "dashboard") renderDashboard();
+    else if (v === "wizard" && wiz) renderWizard();
+    else if (v === "detail" && detailId) openDetail(detailId);
+  }
+
+  // =====================================================================
+  // Dashboard
+  // =====================================================================
+
+  var dashFilter = "all";
+  var listAnimated = false;
+
+  function statusOf(inv) { return isOverdue(inv) ? "overdue" : inv.status; }
+
+  function badgeFor(inv) {
+    var s = statusOf(inv);
+    var label = { draft: "Entwurf", open: "Offen", paid: "Bezahlt", overdue: "Überfällig" }[s];
+    return el("span", "badge " + s, label);
+  }
+
+  function visibleInvoices() {
+    var pf = $("profile-filter").value;
+    return state.invoices.filter(function (inv) {
+      if (pf && pf !== "all" && inv.profileId !== pf) return false;
+      if (dashFilter === "all") return true;
+      return inv.status === dashFilter;
+    }).sort(function (a, b) {
+      return (b.date || "").localeCompare(a.date || "") || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  }
+
+  function renderProfileFilter() {
+    var sel = $("profile-filter");
+    var prev = sel.value;
+    sel.innerHTML = "";
+    var all = el("option", "", "Alle Profile");
+    all.value = "all";
+    sel.appendChild(all);
+    state.profiles.forEach(function (p) {
+      var o = el("option", "", p.label || p.company || "(ohne Namen)");
+      o.value = p.id;
+      sel.appendChild(o);
+    });
+    sel.value = Array.prototype.some.call(sel.options, function (o) { return o.value === prev; }) ? prev : "all";
+    sel.parentElement.style.display = state.profiles.length > 1 ? "" : "none";
+  }
+
+  function renderDashboard() {
+    renderProfileFilter();
+
+    var hasProfiles = state.profiles.length > 0;
+    $("empty-onboard").hidden = hasProfiles;
+    $("btn-new-top").disabled = !hasProfiles;
+
+    var pf = $("profile-filter").value;
+    var scoped = state.invoices.filter(function (i) { return !pf || pf === "all" || i.profileId === pf; });
+
+    var year = new Date().getFullYear();
+    var open = scoped.filter(function (i) { return i.status === "open"; });
+    var overdue = open.filter(isOverdue);
+    var paidYear = scoped.filter(function (i) {
+      return i.status === "paid" && i.paidAt && i.paidAt.slice(0, 4) === String(year);
+    });
+    var drafts = scoped.filter(function (i) { return i.status === "draft"; });
+
+    var sum = function (list) { return list.reduce(function (a, i) { return a + computeTotals(i).gross; }, 0); };
+
+    $("stat-year").textContent = String(year);
+    $("stat-open-sum").textContent = fmt.format(sum(open));
+    var oh = $("stat-open-hint");
+    oh.textContent = "";
+    oh.append(open.length + (open.length === 1 ? " Rechnung" : " Rechnungen"));
+    if (overdue.length) {
+      oh.append(" \u00b7 ");
+      oh.appendChild(el("span", "overdue", overdue.length + " überfällig"));
+    }
+    $("stat-paid-sum").textContent = fmt.format(sum(paidYear));
+    $("stat-paid-hint").textContent = paidYear.length + (paidYear.length === 1 ? " Rechnung" : " Rechnungen");
+    $("stat-draft-count").textContent = String(drafts.length);
+
+    var subParts = [];
+    if (hasProfiles) subParts.push(state.profiles.length === 1 ? (state.profiles[0].label || state.profiles[0].company) : state.profiles.length + " Profile");
+    subParts.push(scoped.length + (scoped.length === 1 ? " Rechnung" : " Rechnungen"));
+    $("dash-sub").textContent = subParts.join(" \u00b7 ");
+
+    var counts = {
+      all: scoped.length,
+      draft: drafts.length,
+      open: open.length,
+      paid: scoped.filter(function (i) { return i.status === "paid"; }).length
+    };
+    document.querySelectorAll(".filter").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.filter === dashFilter));
+      b.querySelector(".count").textContent = counts[b.dataset.filter] ? " " + counts[b.dataset.filter] : "";
+    });
+
+    var list = $("inv-list");
+    list.innerHTML = "";
+    var rows = visibleInvoices();
+    $("empty-invoices").hidden = !hasProfiles || state.invoices.length > 0;
+    $("filters").style.display = state.invoices.length ? "" : "none";
+    $("stats").style.display = hasProfiles ? "" : "none";
+
+    rows.forEach(function (inv, i) {
+      var li = el("li", "inv-row");
+      li.tabIndex = 0;
+      li.setAttribute("role", "button");
+      li.style.setProperty("--i", String(Math.min(i, 10)));
+
+      li.appendChild(el("span", "no num", inv.number || "(ohne Nr.)"));
+
+      var cust = el("span", "cust");
+      cust.appendChild(el("span", "name", (inv.customer && (inv.customer.company || inv.customer.person)) || "(kein Kunde)"));
+      var d = isoToDate(inv.date);
+      var pRef = profileById(inv.profileId);
+      var pLabel = state.profiles.length > 1 && pRef ? (pRef.label || pRef.company) : "";
+      cust.appendChild(el("span", "date", [d ? fmtDate.format(d) : "", pLabel].filter(Boolean).join(" \u00b7 ")));
+      li.appendChild(cust);
+
+      li.appendChild(el("span", "amount num", fmt.format(computeTotals(inv).gross)));
+
+      var statusCol = el("span", "status-col");
+      var actions = el("span", "row-actions");
+      if (inv.status === "open") {
+        var paidBtn = el("button", "btn small ghost", "Bezahlt");
+        paidBtn.type = "button";
+        paidBtn.setAttribute("aria-label", "Als bezahlt markieren");
+        paidBtn.addEventListener("click", function (ev) { ev.stopPropagation(); markPaid(inv.id); });
+        actions.appendChild(paidBtn);
+      }
+      if (inv.status === "draft") {
+        var contBtn = el("button", "btn small ghost", "Fortsetzen");
+        contBtn.type = "button";
+        contBtn.addEventListener("click", function (ev) { ev.stopPropagation(); startWizard("edit", inv.id); });
+        actions.appendChild(contBtn);
+      }
+      statusCol.appendChild(actions);
+      statusCol.appendChild(badgeFor(inv));
+      li.appendChild(statusCol);
+
+      li.addEventListener("click", function () {
+        if (inv.status === "draft") startWizard("edit", inv.id);
+        else openDetail(inv.id);
+      });
+      li.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); }
+      });
+
+      list.appendChild(li);
+    });
+
+    if (!listAnimated && rows.length) {
+      list.classList.add("enter");
+      listAnimated = true;
+      window.setTimeout(function () { list.classList.remove("enter"); }, 800);
+    }
+  }
+
+  function markPaid(id) {
+    var inv = invoiceById(id);
+    if (!inv) return;
+    inv.status = "paid";
+    inv.paidAt = todayISO();
+    dbSaveInvoice(inv);
+    renderCurrentView();
+  }
+
+  function reopen(id) {
+    var inv = invoiceById(id);
+    if (!inv) return;
+    inv.status = "open";
+    inv.paidAt = null;
+    dbSaveInvoice(inv);
+    renderCurrentView();
+  }
+
+  // =====================================================================
+  // Detailansicht
+  // =====================================================================
+
+  var detailId = null;
+
+  function openDetail(id) {
+    var inv = invoiceById(id);
+    if (!inv) { showView("dashboard"); renderDashboard(); return; }
+    detailId = id;
+    mountSheet($("detail-holder"));
+    renderSheet(inv);
+
+    var meta = $("detail-meta");
+    meta.innerHTML = "";
+    meta.appendChild(badgeFor(inv));
+    if (inv.status === "paid" && inv.paidAt) {
+      meta.append(" bezahlt am " + fmtDate.format(isoToDate(inv.paidAt)));
+    } else if (inv.status === "open") {
+      var due = dueDateOf(inv);
+      if (due) meta.append((isOverdue(inv) ? " war fällig am " : " fällig am ") + fmtDate.format(due));
+    }
+    $("detail-paid").textContent = inv.status === "paid" ? "Wieder öffnen" : "Als bezahlt markieren";
+    $("detail-paid").style.display = inv.status === "draft" ? "none" : "";
+    showView("detail");
+  }
+
+  // =====================================================================
+  // Wizard
+  // =====================================================================
+
+  var STEPS = [
+    { key: "profile",   label: "Profil" },
+    { key: "customer",  label: "Kunde" },
+    { key: "details",   label: "Eckdaten" },
+    { key: "positions", label: "Positionen" },
+    { key: "options",   label: "Optionen" },
+    { key: "review",    label: "Prüfen" }
+  ];
+
+  var wiz = null; // { draft, step, editingId, custChoice, saveCustomer }
+
+  function blankInvoice(profile) {
+    return {
+      id: uid(),
+      profileId: profile ? profile.id : null,
+      number: profile ? suggestNumber(profile) : "",
+      date: todayISO(),
+      service: "",
+      paymentDays: profile ? profile.paymentDays : 14,
+      customer: { company: "", person: "", street: "", zip: "", country: "", custno: "" },
+      positions: [{ desc: "", qty: "", unit: "", price: "" }],
+      mode: profile ? profile.mode : "regel",
+      vatRate: profile ? profile.vatRate : 19,
+      skonto: { on: false, pct: profile ? profile.skontoPercent : 2, days: 7 },
+      status: "draft",
+      createdAt: Date.now(),
+      paidAt: null
+    };
+  }
+
+  function applyProfileDefaultsToDraft(p) {
+    wiz.draft.profileId = p.id;
+    wiz.draft.mode = p.mode;
+    wiz.draft.vatRate = p.vatRate;
+    wiz.draft.paymentDays = p.paymentDays;
+    wiz.draft.skonto.pct = p.skontoPercent;
+    wiz.draft.number = suggestNumber(p);
+  }
+
+  function setWizTitle(text) {
+    var t = $("wiz-title");
+    t.innerHTML = "";
+    t.appendChild(el("strong", "", text));
+  }
+
+  function startWizard(kind, id) {
+    var draft, editingId = null, startStep = 0;
+    if (kind === "edit" && id) {
+      var src = invoiceById(id);
+      if (!src) return;
+      draft = JSON.parse(JSON.stringify(src));
+      editingId = id;
+      startStep = 1;
+      setWizTitle(src.status === "draft" ? "Entwurf fortsetzen" : "Rechnung bearbeiten");
+    } else if (kind === "duplicate" && id) {
+      var orig = invoiceById(id);
+      if (!orig) return;
+      draft = JSON.parse(JSON.stringify(orig));
+      draft.id = uid();
+      draft.status = "draft";
+      draft.createdAt = Date.now();
+      draft.paidAt = null;
+      draft.date = todayISO();
+      draft.number = suggestNumber(profileById(draft.profileId));
+      startStep = 1;
+      setWizTitle("Rechnung duplizieren");
+    } else {
+      var only = state.profiles.length === 1 ? state.profiles[0] : null;
+      draft = blankInvoice(only);
+      if (only) startStep = 1;
+      setWizTitle("Neue Rechnung");
+    }
+    wiz = { draft: draft, step: startStep, editingId: editingId, custChoice: "", saveCustomer: false };
+    showView("wizard");
+    renderWizard();
+  }
+
+  function wizGoto(step) {
+    wiz.step = step;
+    renderWizard();
+  }
+
+  function renderStepper() {
+    var nav = $("stepper");
+    nav.innerHTML = "";
+    STEPS.forEach(function (s, i) {
+      var b = el("button", "step-pill");
+      b.type = "button";
+      var st = i === wiz.step ? "current" : (i < wiz.step ? "done" : "todo");
+      b.dataset.state = st;
+      b.appendChild(el("span", "n", String(i + 1)));
+      b.append(s.label);
+      if (st === "current") b.setAttribute("aria-current", "step");
+      if (st === "done") {
+        b.addEventListener("click", function () { wizGoto(i); });
+      } else if (st === "todo") {
+        b.disabled = true;
+      }
+      nav.appendChild(b);
+    });
+  }
+
+  function field(labelText, input, errId) {
+    var wrap = el("div", "field");
+    var lab = el("label", "", labelText);
+    lab.htmlFor = input.id;
+    wrap.appendChild(lab);
+    wrap.appendChild(input);
+    if (errId) {
+      var err = el("p", "field-error");
+      err.id = errId;
+      wrap.appendChild(err);
+    }
+    return wrap;
+  }
+
+  function textInput(id, value, opts) {
+    opts = opts || {};
+    var i = document.createElement("input");
+    i.type = opts.type || "text";
+    i.id = id;
+    i.value = value != null ? String(value) : "";
+    if (opts.placeholder) i.placeholder = opts.placeholder;
+    if (opts.inputmode) i.setAttribute("inputmode", opts.inputmode);
+    if (opts.min != null) i.min = String(opts.min);
+    if (opts.step != null) i.step = String(opts.step);
+    return i;
+  }
+
+  function setErr(errId, inputId, msg) {
+    var e = document.getElementById(errId);
+    if (e) e.textContent = msg || "";
+    var i = document.getElementById(inputId);
+    if (i) {
+      if (msg) i.setAttribute("aria-invalid", "true");
+      else i.removeAttribute("aria-invalid");
+    }
+  }
+
+  // ---- Schritt 1: Profil ----
+
+  function stepProfile(body) {
+    body.append(
+      el("h2", "", "Mit welchem Profil schreibst du diese Rechnung?"),
+      el("p", "lead", "Das Profil liefert Absender, Bankverbindung, Steuernummern und die passende Besteuerung.")
+    );
+
+    var list = el("div", "choice-list");
+    list.setAttribute("role", "radiogroup");
+    list.setAttribute("aria-label", "Profil wählen");
+    state.profiles.forEach(function (p) {
+      var c = el("div", "choice");
+      c.setAttribute("role", "radio");
+      c.tabIndex = 0;
+      c.setAttribute("aria-checked", String(wiz.draft.profileId === p.id));
+      c.appendChild(el("span", "dot"));
+      var main = el("span", "c-main");
+      main.appendChild(el("span", "c-title", p.label || p.company || "(ohne Namen)"));
+      main.appendChild(el("span", "c-sub", [p.company, p.mode === "ku" ? "\u00a7 19 UStG" : "USt " + p.vatRate + " %"].filter(Boolean).join(" \u00b7 ")));
+      c.appendChild(main);
+      var edit = el("button", "btn small ghost c-edit", "Bearbeiten");
+      edit.type = "button";
+      edit.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        openProfileEditor(p, function () { renderWizard(); });
+      });
+      c.appendChild(edit);
+      function choose() {
+        applyProfileDefaultsToDraft(p);
+        renderWizard();
+      }
+      c.addEventListener("click", choose);
+      c.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); choose(); }
+      });
+      list.appendChild(c);
+    });
+    body.appendChild(list);
+
+    var add = el("button", "btn ghost mt", "+ Neues Profil anlegen");
+    add.type = "button";
+    add.addEventListener("click", function () {
+      openProfileEditor(null, function (p) {
+        applyProfileDefaultsToDraft(p);
+        renderWizard();
+      });
+    });
+    body.appendChild(add);
+
+    var err = el("p", "field-error mt", "");
+    err.id = "err-profile";
+    body.appendChild(err);
+  }
+
+  function validateProfile() {
+    if (!wiz.draft.profileId) {
+      $("err-profile").textContent = "Bitte ein Profil wählen oder anlegen.";
+      return false;
+    }
+    return true;
+  }
+
+  // ---- Schritt 2: Kunde ----
+
+  function stepCustomer(body) {
+    body.append(
+      el("h2", "", "An wen geht die Rechnung?"),
+      el("p", "lead", "Gespeicherte Kunden übernehmen alle Felder mit einem Klick. Neue Kunden kannst du für das nächste Mal merken.")
+    );
+
+    if (state.customers.length) {
+      var list = el("div", "choice-list");
+      list.setAttribute("role", "radiogroup");
+      list.setAttribute("aria-label", "Kunde wählen");
+      var options = [null].concat(state.customers);
+      options.forEach(function (c) {
+        var isNew = !c;
+        var row = el("div", "choice");
+        row.setAttribute("role", "radio");
+        row.tabIndex = 0;
+        row.setAttribute("aria-checked", String((wiz.custChoice || "") === (isNew ? "" : c.id)));
+        row.appendChild(el("span", "dot"));
+        var main = el("span", "c-main");
+        main.appendChild(el("span", "c-title", isNew ? "Neuer Kunde" : (c.company || c.person)));
+        main.appendChild(el("span", "c-sub", isNew ? "Felder unten ausfüllen" : [c.person, c.zip].filter(Boolean).join(" \u00b7 ")));
+        row.appendChild(main);
+        function choose() {
+          wiz.custChoice = isNew ? "" : c.id;
+          if (!isNew) {
+            wiz.draft.customer = {
+              company: c.company || "", person: c.person || "", street: c.street || "",
+              zip: c.zip || "", country: c.country || "", custno: c.custno || ""
+            };
+          }
+          renderWizard();
+        }
+        row.addEventListener("click", choose);
+        row.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); choose(); }
+        });
+        list.appendChild(row);
+      });
+      body.appendChild(list);
+      body.appendChild(el("div", "mt"));
+    }
+
+    var c = wiz.draft.customer;
+    var grid = el("div", "grid2");
+    var inCompany = textInput("w-c-company", c.company);
+    var inPerson  = textInput("w-c-person", c.person);
+    var inStreet  = textInput("w-c-street", c.street);
+    var inZip     = textInput("w-c-zip", c.zip);
+    var inCountry = textInput("w-c-country", c.country, { placeholder: "nur bei Ausland" });
+    var inNo      = textInput("w-c-no", c.custno, { placeholder: "optional" });
+    grid.append(
+      field("Firma", inCompany, "err-c-name"),
+      field("Ansprechpartner / z. Hd.", inPerson),
+      field("Straße Hausnummer", inStreet, "err-c-street"),
+      field("PLZ Ort", inZip, "err-c-zip"),
+      field("Land", inCountry),
+      field("Kundennummer", inNo)
+    );
+    body.appendChild(grid);
+
+    grid.addEventListener("input", function () {
+      wiz.draft.customer = {
+        company: inCompany.value.trim(), person: inPerson.value.trim(),
+        street: inStreet.value.trim(), zip: inZip.value.trim(),
+        country: inCountry.value.trim(), custno: inNo.value.trim()
+      };
+      renderMini();
+    });
+
+    var saveWrap = el("label", "inline-check mt");
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = "w-c-save";
+    cb.checked = wiz.saveCustomer;
+    cb.addEventListener("change", function () { wiz.saveCustomer = cb.checked; });
+    saveWrap.append(cb, " Kunden für spätere Rechnungen speichern");
+    body.appendChild(saveWrap);
+  }
+
+  function validateCustomer() {
+    var c = wiz.draft.customer;
+    var ok = true;
+    if (!c.company && !c.person) { setErr("err-c-name", "w-c-company", "Firma oder Ansprechpartner angeben."); ok = false; }
+    else setErr("err-c-name", "w-c-company", "");
+    if (!c.street) { setErr("err-c-street", "w-c-street", "Pflichtangabe nach \u00a7 14 UStG."); ok = false; }
+    else setErr("err-c-street", "w-c-street", "");
+    if (!c.zip) { setErr("err-c-zip", "w-c-zip", "Pflichtangabe nach \u00a7 14 UStG."); ok = false; }
+    else setErr("err-c-zip", "w-c-zip", "");
+    return ok;
+  }
+
+  // ---- Schritt 3: Eckdaten ----
+
+  function stepDetails(body) {
+    body.append(
+      el("h2", "", "Eckdaten der Rechnung"),
+      el("p", "lead", "Die Nummer ist bereits fortlaufend vorgeschlagen – du kannst sie überschreiben, die Zählung folgt dir.")
+    );
+    var d = wiz.draft;
+    var grid = el("div", "grid2");
+    var inNo = textInput("w-no", d.number);
+    var inDate = textInput("w-date", d.date, { type: "date" });
+    var inService = textInput("w-service", d.service, { placeholder: "z. B. Juli 2026" });
+    var inDays = textInput("w-days", d.paymentDays, { type: "number", min: 0, step: 1 });
+    grid.append(
+      field("Rechnungsnummer", inNo, "err-no"),
+      field("Rechnungsdatum", inDate, "err-date"),
+      field("Leistungsdatum / -zeitraum", inService, "err-service"),
+      field("Zahlungsziel (Tage)", inDays)
+    );
+    body.appendChild(grid);
+    grid.addEventListener("input", function () {
+      d.number = inNo.value.trim();
+      d.date = inDate.value;
+      d.service = inService.value.trim();
+      d.paymentDays = parseInt(inDays.value, 10) || 0;
+      renderMini();
+    });
+  }
+
+  function validateDetails() {
+    var d = wiz.draft, ok = true;
+    if (!d.number) { setErr("err-no", "w-no", "Fortlaufende Nummer ist Pflicht."); ok = false; } else setErr("err-no", "w-no", "");
+    if (!d.date) { setErr("err-date", "w-date", "Rechnungsdatum ist Pflicht."); ok = false; } else setErr("err-date", "w-date", "");
+    if (!d.service) { setErr("err-service", "w-service", "Leistungsdatum ist Pflicht \u2013 Monat genügt (z. B. \u201EJuli 2026\u201C)."); ok = false; } else setErr("err-service", "w-service", "");
+    return ok;
+  }
+
+  // ---- Schritt 4: Positionen ----
+
+  function stepPositions(body) {
+    body.append(
+      el("h2", "", "Was stellst du in Rechnung?"),
+      el("p", "lead", "Menge \u00d7 Einzelpreis rechnet sich von selbst. Preise netto angeben (bei \u00a7 19 einfach der Endpreis).")
+    );
+
+    var holder = el("div");
+    var total = el("p", "running-total num");
+    total.id = "w-running-total";
+
+    function updateTotal() {
+      var t = computeTotals(wiz.draft);
+      total.innerHTML = "";
+      if (wiz.draft.mode === "ku") {
+        total.append("Rechnungsbetrag: ");
+        total.appendChild(el("strong", "", fmt.format(t.gross)));
+      } else {
+        total.append("Netto " + fmt.format(t.net) + " \u00b7 zzgl. USt " + fmt.format(t.vat) + " \u00b7 ");
+        total.appendChild(el("strong", "", fmt.format(t.gross) + " brutto"));
+      }
+    }
+
+    function draw() {
+      holder.innerHTML = "";
+      wiz.draft.positions.forEach(function (pos, idx) {
+        var box = el("div", "wpos");
+        var head = el("div", "wpos-head");
+        head.appendChild(el("span", "wpos-n", "Position " + (idx + 1)));
+        if (wiz.draft.positions.length > 1) {
+          var del = el("button", "btn small ghost danger", "Entfernen");
+          del.type = "button";
+          del.addEventListener("click", function () {
+            wiz.draft.positions.splice(idx, 1);
+            draw(); updateTotal(); renderMini();
+          });
+          head.appendChild(del);
+        }
+        box.appendChild(head);
+
+        var g = el("div", "grid-pos");
+        var inDesc = textInput("w-p-desc-" + idx, pos.desc, { placeholder: "Bezeichnung der Leistung / Ware" });
+        var inQty = textInput("w-p-qty-" + idx, pos.qty, { inputmode: "decimal", placeholder: "8" });
+        var inUnit = textInput("w-p-unit-" + idx, pos.unit, { placeholder: "Std." });
+        var inPrice = textInput("w-p-price-" + idx, pos.price, { inputmode: "decimal", placeholder: "90,00" });
+        var fDesc = field("Bezeichnung", inDesc);
+        fDesc.classList.add("span2");
+        g.append(fDesc, field("Menge", inQty), field("Einheit", inUnit), field("Einzelpreis \u20AC", inPrice));
+        box.appendChild(g);
+
+        g.addEventListener("input", function () {
+          pos.desc = inDesc.value.trim();
+          pos.qty = inQty.value.trim();
+          pos.unit = inUnit.value.trim();
+          pos.price = inPrice.value.trim();
+          updateTotal(); renderMini();
+        });
+        inPrice.addEventListener("blur", function () {
+          if (inPrice.value.trim()) {
+            inPrice.value = fmt.format(parseDE(inPrice.value)).replace("\u00a0", " ");
+            pos.price = inPrice.value;
+            updateTotal(); renderMini();
+          }
+        });
+
+        holder.appendChild(box);
+      });
+    }
+
+    var add = el("button", "btn ghost mt", "+ Position hinzufügen");
+    add.type = "button";
+    add.addEventListener("click", function () {
+      wiz.draft.positions.push({ desc: "", qty: "", unit: "", price: "" });
+      draw(); updateTotal(); renderMini();
+      var inputs = holder.querySelectorAll(".wpos input");
+      if (inputs.length) inputs[inputs.length - 4].focus();
+    });
+
+    draw();
+    updateTotal();
+    body.appendChild(holder);
+    body.appendChild(add);
+    body.appendChild(total);
+
+    var err = el("p", "field-error", "");
+    err.id = "err-positions";
+    body.appendChild(err);
+  }
+
+  function validatePositions() {
+    var filled = wiz.draft.positions.filter(function (x) { return x.desc || x.qty || x.price; });
+    if (!filled.length) { $("err-positions").textContent = "Mindestens eine Position angeben."; return false; }
+    if (filled.some(function (x) { return !x.desc || !x.qty || !x.price; })) {
+      $("err-positions").textContent = "Jede Position braucht Bezeichnung, Menge und Preis.";
+      return false;
+    }
+    $("err-positions").textContent = "";
+    wiz.draft.positions = filled;
+    return true;
+  }
+
+  // ---- Schritt 5: Optionen ----
+
+  function stepOptions(body) {
+    body.append(
+      el("h2", "", "Steuer & Zahlungskonditionen"),
+      el("p", "lead", "Vorbelegt aus dem Profil \u2013 Änderungen gelten nur für diese eine Rechnung.")
+    );
+    var d = wiz.draft;
+
+    var grid = el("div", "grid2");
+    var selMode = document.createElement("select");
+    selMode.id = "w-mode";
+    [["regel", "Mit Umsatzsteuer"], ["ku", "Ohne USt (\u00a7 19 UStG)"]].forEach(function (o) {
+      var opt = el("option", "", o[1]);
+      opt.value = o[0];
+      selMode.appendChild(opt);
+    });
+    selMode.value = d.mode;
+    var inRate = textInput("w-vatrate", d.vatRate, { type: "number", min: 0, step: 0.1 });
+    var fRate = field("USt-Satz (%)", inRate);
+    grid.append(field("Besteuerung", selMode), fRate);
+    body.appendChild(grid);
+
+    function syncRateVis() { fRate.style.visibility = selMode.value === "ku" ? "hidden" : "visible"; }
+    syncRateVis();
+
+    selMode.addEventListener("change", function () {
+      d.mode = selMode.value === "ku" ? "ku" : "regel";
+      syncRateVis();
+      renderMini();
+    });
+    inRate.addEventListener("input", function () {
+      d.vatRate = parseFloat(inRate.value) || 0;
+      renderMini();
+    });
+
+    var row = el("div", "mt");
+    var skWrap = el("label", "inline-check");
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = "w-skonto-on";
+    cb.checked = d.skonto.on;
+    skWrap.append(cb, " Skonto anbieten");
+    row.appendChild(skWrap);
+    body.appendChild(row);
+
+    var skGrid = el("div", "grid2 mt");
+    var inPct = textInput("w-skonto-pct", d.skonto.pct, { type: "number", min: 0, step: 0.1 });
+    var inDays = textInput("w-skonto-days", d.skonto.days, { type: "number", min: 0, step: 1 });
+    skGrid.append(field("Skonto (%)", inPct), field("bei Zahlung binnen (Tage)", inDays));
+    body.appendChild(skGrid);
+
+    function syncSk() { skGrid.style.display = cb.checked ? "" : "none"; }
+    syncSk();
+    cb.addEventListener("change", function () { d.skonto.on = cb.checked; syncSk(); renderMini(); });
+    skGrid.addEventListener("input", function () {
+      d.skonto.pct = parseFloat(inPct.value) || 0;
+      d.skonto.days = parseInt(inDays.value, 10) || 0;
+      renderMini();
+    });
+  }
+
+  // ---- Schritt 6: Prüfen & abschließen ----
+
+  function stepReview(body) {
+    body.append(el("h2", "", "Prüfen & abschließen"));
+    var missing = checkRequired(wiz.draft);
+    body.appendChild(el("div", "review-check " + (missing.length ? "miss" : "ok"),
+      missing.length ? "Es fehlt noch: " + missing.join(", ") : "\u2713 Alle Pflichtangaben nach \u00a7 14 UStG vollständig."));
+
+    var holder = el("div", "sheet-holder");
+    body.appendChild(holder);
+    mountSheet(holder);
+    renderSheet(wiz.draft);
+
+    var actions = el("div", "finish-actions");
+    var saveDraft = el("button", "btn", "Als Entwurf speichern");
+    saveDraft.type = "button";
+    saveDraft.id = "wiz-save-draft";
+    saveDraft.addEventListener("click", function () { finishWizard("draft", false); });
+    var finish = el("button", "btn", "Abschließen (offen)");
+    finish.type = "button";
+    finish.id = "wiz-finish";
+    finish.disabled = missing.length > 0;
+    finish.addEventListener("click", function () { finishWizard("open", false); });
+    var finishPrint = el("button", "btn primary", "Abschließen & Drucken / PDF");
+    finishPrint.type = "button";
+    finishPrint.id = "wiz-finish-print";
+    finishPrint.disabled = missing.length > 0;
+    finishPrint.addEventListener("click", function () { finishWizard("open", true); });
+    actions.append(saveDraft, finish, finishPrint);
+    body.appendChild(actions);
+  }
+
+  var stepRenderers = [stepProfile, stepCustomer, stepDetails, stepPositions, stepOptions, stepReview];
+  var stepValidators = [validateProfile, validateCustomer, validateDetails, validatePositions,
+    function () { return true; }, function () { return true; }];
+
+  function renderWizard() {
+    renderStepper();
+    var body = $("wiz-body");
+    body.innerHTML = "";
+    var wrap = el("div", "wiz-step");
+    body.appendChild(wrap);            // erst einhängen, dann rendern (Blatt braucht das DOM)
+    stepRenderers[wiz.step](wrap);
+
+    $("wiz-back").style.visibility = wiz.step === 0 ? "hidden" : "visible";
+    $("wiz-next").style.display = wiz.step === STEPS.length - 1 ? "none" : "";
+    renderMini();
+  }
+
+  function renderMini() {
+    if (currentView() !== "wizard" || !wiz) return;
+    if (wiz.step === STEPS.length - 1) return; // Schritt „Prüfen“ zeigt das Blatt in voller Größe
+    mountSheet($("mini-holder"));
+    renderSheet(wiz.draft);
+  }
+
+  function persistCustomerIfWanted() {
+    if (!wiz.saveCustomer) return;
+    var c = wiz.draft.customer;
+    if (!c.company && !c.person) return;
+    var existing = state.customers.find(function (x) { return x.id === wiz.custChoice; });
+    if (existing) {
+      Object.assign(existing, { company: c.company, person: c.person, street: c.street, zip: c.zip, country: c.country, custno: c.custno });
+      dbSaveCustomer(existing);
+    } else {
+      var nc = { id: uid(), company: c.company, person: c.person, street: c.street, zip: c.zip, country: c.country, custno: c.custno };
+      state.customers.push(nc);
+      dbSaveCustomer(nc);
+    }
+  }
+
+  function finishWizard(status, print) {
+    var d = wiz.draft;
+    d.status = status;
+    persistCustomerIfWanted();
+    var existing = wiz.editingId ? invoiceById(wiz.editingId) : null;
+    if (existing) {
+      Object.keys(d).forEach(function (k) { existing[k] = d[k]; });
+      d = existing;
+    } else {
+      state.invoices.push(d);
+    }
+    if (status === "open") registerUsedNumber(profileById(d.profileId), d.number);
+    dbSaveInvoice(d);
+    wiz = null;
+    if (print) {
+      openDetail(d.id);
+      window.setTimeout(function () { window.print(); }, 60);
+    } else {
+      showView("dashboard");
+      renderDashboard();
+    }
+  }
+
+  $("wiz-next").addEventListener("click", function () {
+    if (!stepValidators[wiz.step]()) return;
+    wizGoto(wiz.step + 1);
+  });
+  $("wiz-back").addEventListener("click", function () { if (wiz.step > 0) wizGoto(wiz.step - 1); });
+  $("wiz-cancel").addEventListener("click", function () {
+    if (window.confirm("Assistent verlassen? Nicht gespeicherte Eingaben gehen verloren.")) {
+      wiz = null;
+      showView("dashboard");
+      renderDashboard();
+    }
+  });
+
+  // =====================================================================
+  // Globale Ereignisse
+  // =====================================================================
+
+  $("btn-home").addEventListener("click", function () { showView("dashboard"); renderDashboard(); });
+  $("btn-new-top").addEventListener("click", function () { startWizard("new"); });
+  $("btn-empty-new").addEventListener("click", function () { startWizard("new"); });
+  $("btn-onboard-profile").addEventListener("click", function () {
+    openProfileEditor(null, function () { renderDashboard(); });
+  });
+
+  $("profile-filter").addEventListener("change", renderDashboard);
+  document.querySelectorAll(".filter").forEach(function (b) {
+    b.addEventListener("click", function () { dashFilter = b.dataset.filter; renderDashboard(); });
+  });
+
+  $("p-save").addEventListener("click", saveProfileFromDialog);
+  $("p-cancel").addEventListener("click", function () { profileDialogDone = null; dlgProfile.close(); });
+  $("p-delete").addEventListener("click", deleteProfileFromDialog);
+
+  $("detail-back").addEventListener("click", function () { showView("dashboard"); renderDashboard(); });
+  $("detail-print").addEventListener("click", function () { window.print(); });
+  $("detail-paid").addEventListener("click", function () {
+    var inv = invoiceById(detailId);
+    if (!inv) return;
+    if (inv.status === "paid") reopen(detailId); else markPaid(detailId);
+    openDetail(detailId);
+  });
+  $("detail-edit").addEventListener("click", function () { startWizard("edit", detailId); });
+  $("detail-dup").addEventListener("click", function () { startWizard("duplicate", detailId); });
+  $("detail-delete").addEventListener("click", function () {
+    var inv = invoiceById(detailId);
+    if (!inv) return;
+    if (!window.confirm("Rechnung " + (inv.number || "") + " wirklich löschen?")) return;
+    state.invoices = state.invoices.filter(function (i) { return i.id !== detailId; });
+    dbDelete("invoices", detailId);
+    showView("dashboard");
+    renderDashboard();
+  });
+
+  window.addEventListener("beforeprint", function () {
+    // Beim Druck einer abgeschlossenen Rechnung die Nummer im Zähler verankern
+    if (currentView() === "detail" && detailId) {
+      var inv = invoiceById(detailId);
+      if (inv && inv.status !== "draft") registerUsedNumber(profileById(inv.profileId), inv.number);
+    }
+  });
+
+  // ---- Daten-Dialog ----
+
+  $("btn-data").addEventListener("click", function () {
+    var d = $("dlg-data");
+    if (typeof d.showModal === "function") d.showModal();
+  });
+  $("data-close").addEventListener("click", function () { $("dlg-data").close(); });
+
+  function exportData() { return JSON.stringify(state, null, 2); }
+
+  function importData(json) {
+    var parsed = migrate(JSON.parse(json));
+    if (!parsed.profiles) throw new Error("Unbekanntes Datenformat");
+    state = parsed;
+    if (!state.profiles.some(function (p) { return p.id === state.activeProfileId; })) {
+      state.activeProfileId = state.profiles.length ? state.profiles[0].id : null;
+    }
+    dbReplaceAll();
+    showView("dashboard");
+    renderDashboard();
+  }
+
+  $("btn-export").addEventListener("click", function () {
+    var blob = new Blob([exportData()], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "rechnungstool-daten.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $("file-import").addEventListener("change", function () {
+    var file = this.files && this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        importData(String(reader.result));
+        $("dlg-data").close();
+      } catch (e) {
+        window.alert("Import fehlgeschlagen: " + e.message);
+      }
+    };
+    reader.readAsText(file);
+    this.value = "";
+  });
+
+  // =====================================================================
+  // Cloud: Laden, Anmeldung, Start
+  // =====================================================================
+
+  function mapRows(res) {
+    if (res.error) throw res.error;
+    return (res.data || []).map(function (r) { return r.data; });
+  }
+
+  function cloudLoadAll() {
+    return Promise.all([
+      cloud.client.from("profiles").select("data"),
+      cloud.client.from("customers").select("data"),
+      cloud.client.from("invoices").select("data")
+    ]).then(function (results) {
+      state = blankState();
+      state.profiles = mapRows(results[0]);
+      state.customers = mapRows(results[1]);
+      state.invoices = mapRows(results[2]);
+      state.activeProfileId = state.profiles.length ? state.profiles[0].id : null;
+    });
+  }
+
+  function afterLogin(user) {
+    cloud.userId = user.id;
+    $("user-email").textContent = user.email || "";
+    $("user-chip").hidden = false;
+    setSync("Lade Daten \u2026");
+    cloudLoadAll().then(function () {
+      setSync("");
+      listAnimated = false;
+      showView("dashboard");
+      renderDashboard();
+    }).catch(function (e) {
+      setSync("Daten konnten nicht geladen werden", true);
+      console.error("[Rechnungstool] LoadAll", e);
+      showView("dashboard");
+      renderDashboard();
+    });
+  }
+
+  function showAuth(msg) {
+    $("user-chip").hidden = true;
+    $("auth-error").textContent = "";
+    $("auth-note").textContent = msg || "";
+    showView("auth");
+  }
+
+  function initCloud() {
+    cloud.client = window.__SUPABASE_TEST_CLIENT ||
+      window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    cloud.enabled = true;
+    state = blankState();
+    return cloud.client.auth.getSession().then(function (res) {
+      var session = res && res.data ? res.data.session : null;
+      if (session && session.user) afterLogin(session.user);
+      else showAuth("");
+    });
+  }
+
+  function boot() {
+    if (!cloudConfigured()) {
+      if (store) {
+        $("storage-note").hidden = false;
+        $("storage-note").textContent = "Lokaler Modus \u2013 Supabase ist noch nicht konfiguriert (URL und anon key im Quelltext eintragen, siehe README).";
+      }
+      renderDashboard();
+      return;
+    }
+    $("storage-note").hidden = true;
+    loadSupabaseLib().then(initCloud).catch(function (e) {
+      console.error("[Rechnungstool] Boot", e);
+      cloud.enabled = false;
+      $("storage-note").hidden = false;
+      $("storage-note").textContent = "Cloud nicht erreichbar \u2013 vorübergehend lokaler Modus (Änderungen landen nur in diesem Browser).";
+      renderDashboard();
+    });
+  }
+
+  $("btn-login").addEventListener("click", function () {
+    var email = $("auth-email").value.trim(), pass = $("auth-pass").value;
+    if (!email || !pass) { $("auth-error").textContent = "E-Mail und Passwort angeben."; return; }
+    $("auth-error").textContent = "";
+    cloud.client.auth.signInWithPassword({ email: email, password: pass }).then(function (res) {
+      if (res.error) { $("auth-error").textContent = res.error.message; return; }
+      afterLogin(res.data.user);
+    });
+  });
+
+  $("btn-register").addEventListener("click", function () {
+    var email = $("auth-email").value.trim(), pass = $("auth-pass").value;
+    if (!email || pass.length < 8) { $("auth-error").textContent = "E-Mail angeben, Passwort mindestens 8 Zeichen."; return; }
+    $("auth-error").textContent = "";
+    cloud.client.auth.signUp({ email: email, password: pass }).then(function (res) {
+      if (res.error) { $("auth-error").textContent = res.error.message; return; }
+      if (res.data && res.data.session) afterLogin(res.data.user);
+      else $("auth-note").textContent = "Fast geschafft: Bitte den Bestätigungslink in deiner E-Mail öffnen und dann anmelden.";
+    });
+  });
+
+  $("btn-logout").addEventListener("click", function () {
+    cloud.client.auth.signOut().then(function () {
+      state = blankState();
+      showAuth("Abgemeldet.");
+    });
+  });
+
+  // =====================================================================
+  // Start
+  // =====================================================================
+
+  boot();
+
+  // Test- und Automatisierungs-Schnittstelle
+  window.__rt = {
+    get state() { return state; },
+    get wiz() { return wiz; },
+    get cloud() { return cloud; },
+    persist: persist,
+    suggestNumber: suggestNumber,
+    registerUsedNumber: registerUsedNumber,
+    computeTotals: computeTotals,
+    checkRequired: checkRequired,
+    isOverdue: isOverdue,
+    startWizard: startWizard,
+    finishWizard: finishWizard,
+    markPaid: markPaid,
+    reopen: reopen,
+    openDetail: openDetail,
+    renderDashboard: renderDashboard,
+    exportData: exportData,
+    importData: importData,
+    profileById: profileById
+  };
+})();
+</script>
+</body>
+</html>
