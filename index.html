@@ -340,7 +340,9 @@
   .wiz-layout { display: grid; grid-template-columns: 1fr; gap: 36px; }
   @media (min-width: 1180px) {
     .wiz-layout { grid-template-columns: minmax(0, 620px) 300px; justify-content: center; }
+    .wiz-layout.review { grid-template-columns: minmax(0, 900px); }
   }
+  .wiz-preview[hidden] { display: none !important; }
 
   .wiz-top {
     display: flex;
@@ -504,6 +506,11 @@
   .detail-bar .meta { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
 
   .sheet-holder { overflow-x: auto; padding-bottom: 8px; }
+
+  /* Blatt verlustfrei auf Containerbreite skalieren (statt abzuschneiden) */
+  .sheet-fit { overflow: hidden; }
+
+  .note-line { margin-top: 14px; font-size: 12px; }
 
   /* =====================================================================
      Dialoge
@@ -800,7 +807,7 @@
         <button type="button" class="btn danger ghost" id="detail-delete">Löschen</button>
         <button type="button" class="btn primary" id="detail-print">Drucken / PDF</button>
       </div>
-      <div class="sheet-holder" id="detail-holder"></div>
+      <div class="sheet-holder sheet-fit" id="detail-holder"></div>
     </div>
   </section>
 
@@ -830,49 +837,50 @@
           <div class="country" id="s-c-country"></div>
         </div>
         <dl class="smeta">
-          <dt class="m-no">Rechnungsnummer:</dt>      <dd class="m-no" id="s-m-no"></dd>
-          <dt class="m-date">Rechnungsdatum:</dt>     <dd class="m-date" id="s-m-date"></dd>
-          <dt class="m-service">Leistungsdatum:</dt>  <dd class="m-service" id="s-m-service"></dd>
-          <dt class="m-custno">Kundennummer:</dt>     <dd class="m-custno" id="s-m-custno"></dd>
-          <dt class="m-tax">Steuernummer:</dt>        <dd class="m-tax" id="s-m-tax"></dd>
-          <dt class="m-vatid">USt-IdNr.:</dt>         <dd class="m-vatid" id="s-m-vatid"></dd>
+          <dt class="m-no" id="s-l-no"></dt>           <dd class="m-no" id="s-m-no"></dd>
+          <dt class="m-date" id="s-l-date"></dt>       <dd class="m-date" id="s-m-date"></dd>
+          <dt class="m-service" id="s-l-service"></dt> <dd class="m-service" id="s-m-service"></dd>
+          <dt class="m-custno" id="s-l-custno"></dt>   <dd class="m-custno" id="s-m-custno"></dd>
+          <dt class="m-tax" id="s-l-tax"></dt>         <dd class="m-tax" id="s-m-tax"></dd>
+          <dt class="m-vatid" id="s-l-vatid"></dt>     <dd class="m-vatid" id="s-m-vatid"></dd>
         </dl>
       </div>
-      <h2 class="subject">Rechnung Nr. <span id="s-no2"></span></h2>
+      <h2 class="subject"><span id="s-subj">Rechnung Nr.</span> <span id="s-no2"></span></h2>
       <div class="letter">
-        <p>Sehr geehrte Damen und Herren,</p>
-        <p>vielen Dank für Ihren Auftrag. Vereinbarungsgemäß stellen wir Ihnen folgende Lieferungen und Leistungen in Rechnung:</p>
+        <p id="s-salut"></p>
+        <p id="s-intro"></p>
       </div>
       <table class="items">
         <caption>Rechnungspositionen mit Menge, Einzelpreis und Gesamtbetrag</caption>
         <thead>
           <tr>
-            <th class="c-pos" scope="col">Pos.</th>
-            <th scope="col">Bezeichnung (Menge und Art der Leistung / Lieferung)</th>
-            <th class="c-qty" scope="col">Menge</th>
-            <th class="c-unit" scope="col">Einheit</th>
-            <th class="c-price" scope="col"><span class="only-regel">Einzelpreis (netto)</span><span class="only-ku">Einzelpreis</span></th>
-            <th class="c-total" scope="col"><span class="only-regel">Gesamt (netto)</span><span class="only-ku">Gesamt</span></th>
+            <th class="c-pos" scope="col" id="s-th-pos"></th>
+            <th scope="col" id="s-th-desc"></th>
+            <th class="c-qty" scope="col" id="s-th-qty"></th>
+            <th class="c-unit" scope="col" id="s-th-unit"></th>
+            <th class="c-price" scope="col"><span class="only-regel" id="s-th-price-r"></span><span class="only-ku" id="s-th-price-k"></span></th>
+            <th class="c-total" scope="col"><span class="only-regel" id="s-th-total-r"></span><span class="only-ku" id="s-th-total-k"></span></th>
           </tr>
         </thead>
         <tbody id="s-items"></tbody>
       </table>
       <div class="totals-wrap">
         <div class="totals">
-          <span class="only-regel">Zwischensumme (netto)</span>
+          <span class="only-regel" id="s-l-net"></span>
           <span class="only-regel num" id="s-net"></span>
-          <span class="only-regel">zzgl. <span id="s-vatlabel">19</span>&nbsp;% Umsatzsteuer</span>
+          <span class="only-regel" id="s-l-vat"></span>
           <span class="only-regel num" id="s-vat"></span>
-          <span class="grand only-regel">Rechnungsbetrag (brutto)</span>
-          <span class="grand only-ku">Rechnungsbetrag</span>
+          <span class="grand only-regel" id="s-l-grand-r"></span>
+          <span class="grand only-ku" id="s-l-grand-k"></span>
           <span class="grand num" id="s-gross"></span>
         </div>
-        <p class="ku-note only-ku">Gemäß § 19 UStG wird keine Umsatzsteuer berechnet (Steuerbefreiung für Kleinunternehmer).</p>
+        <p class="ku-note only-ku" id="s-kunote"></p>
         <p class="skonto" id="s-skonto"></p>
       </div>
-      <p class="payment">Bitte überweisen Sie den Rechnungsbetrag ohne Abzug bis zum <span id="s-due"></span> (Zahlungsziel: <span id="s-days"></span> Tage nach Rechnungseingang) unter Angabe der Rechnungsnummer auf das unten genannte Konto.</p>
-      <p class="thanks">Vielen Dank für die gute Zusammenarbeit.</p>
-      <p class="regards">Mit freundlichen Grüßen</p>
+      <p class="note-line hidden" id="s-note"></p>
+      <p class="payment" id="s-payment"></p>
+      <p class="thanks" id="s-thanks"></p>
+      <p class="regards" id="s-regards"></p>
       <p class="signature" id="s-sign"></p>
       <footer class="sheet-foot">
         <div>
@@ -958,8 +966,8 @@
   // eintragen (Project Settings → API). Siehe README, Schritt 4.
   // Bleiben die Platzhalter stehen, läuft das Tool im lokalen Modus.
   // =====================================================================
-  var SUPABASE_URL = "https://qggdvsnznokakqdrscvv.supabase.co";
-  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnZ2R2c256bm9rYWtxZHJzY3Z2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MDI1NjAsImV4cCI6MjA5OTQ3ODU2MH0.FWt1NFA-u5OtvAGzXrECpxkaeHqxunIrjNak0cI6_XM";
+  var SUPABASE_URL = "HIER_SUPABASE_URL_EINTRAGEN";
+  var SUPABASE_ANON_KEY = "HIER_ANON_KEY_EINTRAGEN";
   var SUPABASE_LIB = {
     src: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.2/dist/umd/supabase.js",
     integrity: "sha384-yifgV8iFWyp5cgu+V1G1rtlEHpEErPlL5fTrkUELIsWq0CIVDON2WP/NlXVJT3vO"
@@ -991,6 +999,56 @@
 
   var fmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
   var fmtDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  // Formatierung und Texte des Rechnungsblatts je Sprache (App-UI bleibt Deutsch)
+  var CUR = {
+    de: fmt,
+    en: new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" })
+  };
+  var DAT = {
+    de: fmtDate,
+    en: new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+  };
+  var L = {
+    de: {
+      subject: "Rechnung Nr.",
+      salut: "Sehr geehrte Damen und Herren,",
+      intro: "vielen Dank für Ihren Auftrag. Vereinbarungsgemäß stellen wir Ihnen folgende Lieferungen und Leistungen in Rechnung:",
+      thPos: "Pos.", thDesc: "Bezeichnung (Menge und Art der Leistung / Lieferung)", thQty: "Menge", thUnit: "Einheit",
+      thPriceR: "Einzelpreis (netto)", thPriceK: "Einzelpreis", thTotalR: "Gesamt (netto)", thTotalK: "Gesamt",
+      lNo: "Rechnungsnummer:", lDate: "Rechnungsdatum:", lService: "Leistungsdatum:", lCustno: "Kundennummer:",
+      lTax: "Steuernummer:", lVatid: "USt-IdNr.:",
+      lNet: "Zwischensumme (netto)", lGrandR: "Rechnungsbetrag (brutto)", lGrandK: "Rechnungsbetrag",
+      vatLabel: function (r) { return "zzgl. " + r + "\u00a0% Umsatzsteuer"; },
+      kuNote: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet (Steuerbefreiung für Kleinunternehmer).",
+      skonto: function (dateStr, pct, amount) { return "Bei Zahlung bis zum " + dateStr + " gewähren wir " + pct + " % Skonto; Zahlbetrag dann " + amount + "."; },
+      payment: function (due, days) { return "Bitte überweisen Sie den Rechnungsbetrag ohne Abzug bis zum " + due + " (Zahlungsziel: " + days + " Tage nach Rechnungseingang) unter Angabe der Rechnungsnummer auf das unten genannte Konto."; },
+      thanks: "Vielen Dank für die gute Zusammenarbeit.",
+      regards: "Mit freundlichen Grüßen",
+      owner: "Inhaber/in: ", bank: "Bank: ", holder: "Kontoinhaber: ",
+      tax: "Steuernummer: ", vatid: "USt-IdNr.: ", mgmt: "Geschäftsführung: ",
+      phone: "Tel.: ", mail: "E-Mail: "
+    },
+    en: {
+      subject: "Invoice no.",
+      salut: "Dear Sir or Madam,",
+      intro: "Thank you for your order. As agreed, we invoice the following goods and services:",
+      thPos: "No.", thDesc: "Description (quantity and type of goods / services)", thQty: "Qty", thUnit: "Unit",
+      thPriceR: "Unit price (net)", thPriceK: "Unit price", thTotalR: "Total (net)", thTotalK: "Total",
+      lNo: "Invoice no.:", lDate: "Invoice date:", lService: "Service date:", lCustno: "Customer no.:",
+      lTax: "Tax number:", lVatid: "VAT ID:",
+      lNet: "Subtotal (net)", lGrandR: "Invoice total (gross)", lGrandK: "Invoice total",
+      vatLabel: function (r) { return "plus " + r + "\u00a0% VAT"; },
+      kuNote: "In accordance with Section 19 of the German VAT Act (UStG), no VAT is charged (small business exemption).",
+      skonto: function (dateStr, pct, amount) { return "If paid by " + dateStr + ", an early payment discount of " + pct + " % applies; amount payable " + amount + "."; },
+      payment: function (due, days) { return "Please transfer the invoice amount without deduction by " + due + " (payment term: " + days + " days after receipt of invoice) to the account below, quoting the invoice number."; },
+      thanks: "Thank you for your business.",
+      regards: "Kind regards",
+      owner: "Owner: ", bank: "Bank: ", holder: "Account holder: ",
+      tax: "Tax number: ", vatid: "VAT ID: ", mgmt: "Managing director: ",
+      phone: "Phone: ", mail: "Email: "
+    }
+  };
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -1283,7 +1341,33 @@
 
   function mountSheet(container) {
     if (sheet.parentNode !== container) container.appendChild(sheet);
+    sheet.style.transform = "";
+    sheet.style.margin = "";
+    if (container.classList && container.classList.contains("sheet-fit")) container.style.height = "";
   }
+
+  // Blatt in .sheet-fit-Containern auf deren Breite herunterskalieren
+  function fitSheet(wrap) {
+    if (!wrap || !wrap.classList.contains("sheet-fit")) return;
+    var natural = sheet.offsetWidth;
+    if (!natural) return; // Umgebung ohne Layout (Tests)
+    var scale = Math.min(1, wrap.clientWidth / natural);
+    if (scale < 1) {
+      sheet.style.transform = "scale(" + scale + ")";
+      sheet.style.transformOrigin = "top left";
+      sheet.style.margin = "0";
+      wrap.style.height = Math.ceil(sheet.offsetHeight * scale) + "px";
+    } else {
+      sheet.style.transform = "";
+      sheet.style.margin = "";
+      wrap.style.height = "";
+    }
+  }
+
+  window.addEventListener("resize", function () {
+    var p = sheet.parentElement;
+    if (p && p.classList && p.classList.contains("sheet-fit")) fitSheet(p);
+  });
 
   function setLine(id, text) {
     var n = $(id);
@@ -1302,12 +1386,41 @@
     var p = profileById(inv.profileId) || blankProfile();
     document.body.setAttribute("data-mode", inv.mode === "ku" ? "ku" : "regel");
 
+    var lang = inv.lang === "en" ? "en" : "de";
+    var t9 = L[lang];
+    var cf = CUR[lang];
+    var df = DAT[lang];
+
+    $("s-subj").textContent = t9.subject;
+    $("s-salut").textContent = t9.salut;
+    $("s-intro").textContent = t9.intro;
+    $("s-th-pos").textContent = t9.thPos;
+    $("s-th-desc").textContent = t9.thDesc;
+    $("s-th-qty").textContent = t9.thQty;
+    $("s-th-unit").textContent = t9.thUnit;
+    $("s-th-price-r").textContent = t9.thPriceR;
+    $("s-th-price-k").textContent = t9.thPriceK;
+    $("s-th-total-r").textContent = t9.thTotalR;
+    $("s-th-total-k").textContent = t9.thTotalK;
+    $("s-l-no").textContent = t9.lNo;
+    $("s-l-date").textContent = t9.lDate;
+    $("s-l-service").textContent = t9.lService;
+    $("s-l-custno").textContent = t9.lCustno;
+    $("s-l-tax").textContent = t9.lTax;
+    $("s-l-vatid").textContent = t9.lVatid;
+    $("s-l-net").textContent = t9.lNet;
+    $("s-l-grand-r").textContent = t9.lGrandR;
+    $("s-l-grand-k").textContent = t9.lGrandK;
+    $("s-thanks").textContent = t9.thanks;
+    $("s-regards").textContent = t9.regards;
+    $("s-kunote").textContent = t9.kuNote;
+
     $("s-brand").textContent = p.company;
     $("s-tagline").textContent = p.tagline;
     setLine("s-street", p.street);
     setLine("s-zip", p.zip);
-    setLine("s-phone", p.phone ? "Tel.: " + p.phone : "");
-    setLine("s-mail", p.email ? "E-Mail: " + p.email : "");
+    setLine("s-phone", p.phone ? t9.phone + p.phone : "");
+    setLine("s-mail", p.email ? t9.mail + p.email : "");
     $("s-senderline").textContent = [p.company, p.street, p.zip].filter(Boolean).join(" \u00b7 ");
 
     var c = inv.customer || {};
@@ -1319,7 +1432,7 @@
 
     var date = isoToDate(inv.date);
     setMetaRow("m-no", "s-m-no", inv.number);
-    setMetaRow("m-date", "s-m-date", date ? fmtDate.format(date) : "");
+    setMetaRow("m-date", "s-m-date", date ? df.format(date) : "");
     setMetaRow("m-service", "s-m-service", inv.service);
     setMetaRow("m-custno", "s-m-custno", c.custno);
     setMetaRow("m-tax", "s-m-tax", p.tax);
@@ -1336,8 +1449,8 @@
        ["", pos.desc || ""],
        ["c-qty", pos.qty || ""],
        ["c-unit", pos.unit || ""],
-       ["c-price num", pos.price !== "" ? fmt.format(parseDE(pos.price)) : ""],
-       ["c-total num", hasAmount ? fmt.format(line) : ""]].forEach(function (def) {
+       ["c-price num", pos.price !== "" ? cf.format(parseDE(pos.price)) : ""],
+       ["c-total num", hasAmount ? cf.format(line) : ""]].forEach(function (def) {
         var td = document.createElement("td");
         if (def[0]) td.className = def[0];
         td.textContent = def[1];
@@ -1347,40 +1460,46 @@
     });
 
     var t = computeTotals(inv);
-    $("s-vatlabel").textContent = String(inv.vatRate || 0).replace(".", ",");
-    $("s-net").textContent = fmt.format(t.net);
-    $("s-vat").textContent = fmt.format(t.vat);
-    $("s-gross").textContent = fmt.format(t.gross);
+    var rateStr = String(inv.vatRate || 0);
+    if (lang === "de") rateStr = rateStr.replace(".", ",");
+    $("s-l-vat").textContent = t9.vatLabel(rateStr);
+    $("s-net").textContent = cf.format(t.net);
+    $("s-vat").textContent = cf.format(t.vat);
+    $("s-gross").textContent = cf.format(t.gross);
 
     var sk = inv.skonto || {};
     var skEl = $("s-skonto");
     if (sk.on && date) {
-      var sdate = fmtDate.format(addDays(date, sk.days || 0));
-      skEl.textContent = "Bei Zahlung bis zum " + sdate + " gewähren wir " +
-        String(sk.pct || 0).replace(".", ",") + " % Skonto; Zahlbetrag dann " +
-        fmt.format(t.gross * (1 - (sk.pct || 0) / 100)) + ".";
+      var sdate = df.format(addDays(date, sk.days || 0));
+      var pctStr = String(sk.pct || 0);
+      if (lang === "de") pctStr = pctStr.replace(".", ",");
+      skEl.textContent = t9.skonto(sdate, pctStr, cf.format(t.gross * (1 - (sk.pct || 0) / 100)));
       skEl.classList.remove("hidden");
     } else {
       skEl.textContent = "";
       skEl.classList.add("hidden");
     }
 
-    $("s-days").textContent = String(inv.paymentDays || 0);
-    $("s-due").textContent = date ? fmtDate.format(addDays(date, inv.paymentDays || 0)) : "";
+    var noteEl = $("s-note");
+    noteEl.textContent = inv.noteText || "";
+    noteEl.classList.toggle("hidden", !inv.noteText);
+
+    var dueStr = date ? df.format(addDays(date, inv.paymentDays || 0)) : "";
+    $("s-payment").textContent = t9.payment(dueStr, inv.paymentDays || 0);
     $("s-sign").textContent = p.owner || p.company;
 
     setLine("s-f-company", p.company);
-    setLine("s-f-owner", p.owner ? "Inhaber/in: " + p.owner : "");
+    setLine("s-f-owner", p.owner ? t9.owner + p.owner : "");
     setLine("s-f-street", p.street);
     setLine("s-f-zip", p.zip);
-    setLine("s-f-bank", p.bank ? "Bank: " + p.bank : "");
+    setLine("s-f-bank", p.bank ? t9.bank + p.bank : "");
     setLine("s-f-iban", p.iban ? "IBAN: " + p.iban : "");
     setLine("s-f-bic", p.bic ? "BIC: " + p.bic : "");
-    setLine("s-f-holder", p.holder ? "Kontoinhaber: " + p.holder : "");
-    setLine("s-f-tax", p.tax ? "Steuernummer: " + p.tax : "");
-    setLine("s-f-vatid", p.vatid ? "USt-IdNr.: " + p.vatid : "");
+    setLine("s-f-holder", p.holder ? t9.holder + p.holder : "");
+    setLine("s-f-tax", p.tax ? t9.tax + p.tax : "");
+    setLine("s-f-vatid", p.vatid ? t9.vatid + p.vatid : "");
     setLine("s-f-register", p.register);
-    setLine("s-f-mgmt", p.mgmt ? "Geschäftsführung: " + p.mgmt : "");
+    setLine("s-f-mgmt", p.mgmt ? t9.mgmt + p.mgmt : "");
   }
 
   // =====================================================================
@@ -1604,6 +1723,7 @@
     detailId = id;
     mountSheet($("detail-holder"));
     renderSheet(inv);
+    fitSheet($("detail-holder"));
 
     var meta = $("detail-meta");
     meta.innerHTML = "";
@@ -1646,6 +1766,8 @@
       positions: [{ desc: "", qty: "", unit: "", price: "" }],
       mode: profile ? profile.mode : "regel",
       vatRate: profile ? profile.vatRate : 19,
+      lang: "de",
+      noteText: "",
       skonto: { on: false, pct: profile ? profile.skontoPercent : 2, days: 7 },
       status: "draft",
       createdAt: Date.now(),
@@ -2117,6 +2239,27 @@
       d.skonto.days = parseInt(inDays.value, 10) || 0;
       renderMini();
     });
+
+    var langGrid = el("div", "grid2 mt");
+    var selLang = document.createElement("select");
+    selLang.id = "w-lang";
+    [["de", "Deutsch"], ["en", "Englisch (für Auslandskunden)"]].forEach(function (o) {
+      var opt = el("option", "", o[1]);
+      opt.value = o[0];
+      selLang.appendChild(opt);
+    });
+    selLang.value = d.lang === "en" ? "en" : "de";
+    var inNote = textInput("w-note", d.noteText, { placeholder: "z. B. Reverse charge \u2013 VAT payable by recipient" });
+    langGrid.append(field("Sprache der Rechnung", selLang), field("Zusatzhinweis auf der Rechnung (optional)", inNote));
+    body.appendChild(langGrid);
+    selLang.addEventListener("change", function () {
+      d.lang = selLang.value === "en" ? "en" : "de";
+      renderMini();
+    });
+    inNote.addEventListener("input", function () {
+      d.noteText = inNote.value.trim();
+      renderMini();
+    });
   }
 
   // ---- Schritt 6: Prüfen & abschließen ----
@@ -2127,10 +2270,11 @@
     body.appendChild(el("div", "review-check " + (missing.length ? "miss" : "ok"),
       missing.length ? "Es fehlt noch: " + missing.join(", ") : "\u2713 Alle Pflichtangaben nach \u00a7 14 UStG vollständig."));
 
-    var holder = el("div", "sheet-holder");
+    var holder = el("div", "sheet-fit");
     body.appendChild(holder);
     mountSheet(holder);
     renderSheet(wiz.draft);
+    fitSheet(holder);
 
     var actions = el("div", "finish-actions");
     var saveDraft = el("button", "btn", "Als Entwurf speichern");
@@ -2163,8 +2307,11 @@
     body.appendChild(wrap);            // erst einhängen, dann rendern (Blatt braucht das DOM)
     stepRenderers[wiz.step](wrap);
 
+    var isReview = wiz.step === STEPS.length - 1;
+    document.querySelector(".wiz-layout").classList.toggle("review", isReview);
+    document.querySelector(".wiz-preview").hidden = isReview;
     $("wiz-back").style.visibility = wiz.step === 0 ? "hidden" : "visible";
-    $("wiz-next").style.display = wiz.step === STEPS.length - 1 ? "none" : "";
+    $("wiz-next").style.display = isReview ? "none" : "";
     renderMini();
   }
 
