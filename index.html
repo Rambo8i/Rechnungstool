@@ -334,6 +334,12 @@
   .empty h2 { font-size: 16px; font-weight: 650; }
   .empty p { margin: 8px auto 18px; max-width: 46ch; color: var(--muted); font-size: 13.5px; }
 
+  .hints { margin: 34px 0 0; color: var(--muted); font-size: 13px; }
+  .hints summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+  .hints ul { margin: 12px 0 0; padding-left: 18px; }
+  .hints li + li { margin-top: 7px; }
+  .hints strong { color: var(--ink); font-weight: 600; }
+
   /* =====================================================================
      Wizard
      ===================================================================== */
@@ -458,6 +464,9 @@
   .wpos .grid-pos { display: grid; grid-template-columns: minmax(0, 1fr) 84px 92px 130px; gap: 10px; }
   .wpos .span2 { grid-column: 1 / -1; }
   @media (max-width: 640px) { .wpos .grid-pos { grid-template-columns: 1fr 1fr; } }
+
+  .mode-hint { margin: 10px 0 0; font-size: 12px; color: var(--muted); max-width: 58ch; }
+  .mode-hint:empty { display: none; }
 
   .running-total { display: flex; justify-content: flex-end; gap: 14px; margin-top: 14px; font-size: 14px; }
   .running-total strong { font-weight: 700; }
@@ -765,6 +774,18 @@
         <p>Der Assistent führt dich in fünf kurzen Schritten zur fertigen Rechnung – Profil, Kunde, Eckdaten, Positionen, Optionen. Nichts wird übersehen.</p>
         <button type="button" class="btn primary" id="btn-empty-new">Erste Rechnung anlegen</button>
       </div>
+
+      <details class="hints">
+        <summary>Rechtliche Hinweise (§ 14 UStG, Ausland, E-Rechnung, Aufbewahrung)</summary>
+        <ul>
+          <li><strong>Pflichtangaben (§ 14 Abs. 4 UStG):</strong> Der Check im Schritt „Prüfen“ meldet konkret, was fehlt – von Anschriften über Steuernummer/USt-IdNr. bis Leistungsdatum und Positionen.</li>
+          <li><strong>Kleinunternehmer (§ 19 UStG):</strong> Modus „Ohne USt“ setzt den Pflichthinweis zur Steuerbefreiung automatisch. Voraussetzungen seit 2025: max. 25.000 € Vorjahres- und 100.000 € laufender Umsatz.</li>
+          <li><strong>EU-Ausland (B2B, z. B. FTMO in Tschechien):</strong> Modus „Reverse Charge“ – keine deutsche USt, Pflichtvermerk „Steuerschuldnerschaft des Leistungsempfängers“ und beide USt-IdNrn. erscheinen automatisch. Zusätzlich den Umsatz quartalsweise in der Zusammenfassenden Meldung (§ 18a UStG) ans BZSt melden – das gilt auch für Kleinunternehmer, die dafür eine USt-IdNr. brauchen (kostenlos beim BZSt beantragbar).</li>
+          <li><strong>Drittland (B2B, z. B. USA, UK, VAE):</strong> Modus „Drittland“ – Leistung nicht im Inland steuerbar (§ 3a Abs. 2 UStG), Vermerk erscheint automatisch, keine ZM. Unternehmereigenschaft des Kunden dokumentieren (Registerauszug, Bestätigung).</li>
+          <li><strong>E-Rechnung (nur inländisches B2B):</strong> Papier/PDF ist übergangsweise bis 31.12.2026 zulässig (bis 31.12.2027 bei Vorjahresumsatz ≤ 800.000 €); B2C und Auslandsrechnungen sind nicht betroffen.</li>
+          <li><strong>Aufbewahrung:</strong> Rechnungskopien 8 Jahre unveränderbar archivieren (GoBD) – am einfachsten das erzeugte PDF ablegen. Diese Hinweise ersetzen keine steuerliche Beratung.</li>
+        </ul>
+      </details>
     </div>
   </section>
 
@@ -841,6 +862,7 @@
           <dt class="m-date" id="s-l-date"></dt>       <dd class="m-date" id="s-m-date"></dd>
           <dt class="m-service" id="s-l-service"></dt> <dd class="m-service" id="s-m-service"></dd>
           <dt class="m-custno" id="s-l-custno"></dt>   <dd class="m-custno" id="s-m-custno"></dd>
+          <dt class="m-cvat" id="s-l-cvat"></dt>       <dd class="m-cvat" id="s-m-cvat"></dd>
           <dt class="m-tax" id="s-l-tax"></dt>         <dd class="m-tax" id="s-m-tax"></dd>
           <dt class="m-vatid" id="s-l-vatid"></dt>     <dd class="m-vatid" id="s-m-vatid"></dd>
         </dl>
@@ -928,8 +950,10 @@
       <div class="field">
         <label for="p-mode">Standard-Besteuerung</label>
         <select id="p-mode">
-          <option value="regel">Mit Umsatzsteuer</option>
-          <option value="ku">Ohne USt (§ 19 UStG, Kleinunternehmer)</option>
+          <option value="regel">Mit deutscher Umsatzsteuer</option>
+          <option value="ku">Ohne USt – Kleinunternehmer (§ 19 UStG)</option>
+          <option value="rc">Reverse Charge – EU-Ausland (B2B)</option>
+          <option value="export">Drittland – nicht im Inland steuerbar</option>
         </select>
       </div>
       <div class="field"><label for="p-vatrate">USt-Satz (%)</label><input type="number" id="p-vatrate" min="0" step="0.1" value="19"></div>
@@ -966,8 +990,8 @@
   // eintragen (Project Settings → API). Siehe README, Schritt 4.
   // Bleiben die Platzhalter stehen, läuft das Tool im lokalen Modus.
   // =====================================================================
-  var SUPABASE_URL = "https://qggdvsnznokakqdrscvv.supabase.co";
-  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFnZ2R2c256bm9rYWtxZHJzY3Z2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MDI1NjAsImV4cCI6MjA5OTQ3ODU2MH0.FWt1NFA-u5OtvAGzXrECpxkaeHqxunIrjNak0cI6_XM";
+  var SUPABASE_URL = "HIER_SUPABASE_URL_EINTRAGEN";
+  var SUPABASE_ANON_KEY = "HIER_ANON_KEY_EINTRAGEN";
   var SUPABASE_LIB = {
     src: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.2/dist/umd/supabase.js",
     integrity: "sha384-yifgV8iFWyp5cgu+V1G1rtlEHpEErPlL5fTrkUELIsWq0CIVDON2WP/NlXVJT3vO"
@@ -1017,10 +1041,14 @@
       thPos: "Pos.", thDesc: "Bezeichnung (Menge und Art der Leistung / Lieferung)", thQty: "Menge", thUnit: "Einheit",
       thPriceR: "Einzelpreis (netto)", thPriceK: "Einzelpreis", thTotalR: "Gesamt (netto)", thTotalK: "Gesamt",
       lNo: "Rechnungsnummer:", lDate: "Rechnungsdatum:", lService: "Leistungsdatum:", lCustno: "Kundennummer:",
-      lTax: "Steuernummer:", lVatid: "USt-IdNr.:",
+      lTax: "Steuernummer:", lVatid: "USt-IdNr.:", lCvat: "USt-IdNr. Kunde:",
       lNet: "Zwischensumme (netto)", lGrandR: "Rechnungsbetrag (brutto)", lGrandK: "Rechnungsbetrag",
       vatLabel: function (r) { return "zzgl. " + r + "\u00a0% Umsatzsteuer"; },
-      kuNote: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet (Steuerbefreiung für Kleinunternehmer).",
+      taxNote: {
+        ku: "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet (Steuerbefreiung für Kleinunternehmer).",
+        rc: "Steuerschuldnerschaft des Leistungsempfängers (Reverse-Charge-Verfahren, Art. 196 MwStSystRL). Kein Ausweis deutscher Umsatzsteuer.",
+        "export": "Leistungsort ist der Sitz des Leistungsempfängers; die Leistung ist nicht im Inland steuerbar (§ 3a Abs. 2 UStG). Kein Ausweis deutscher Umsatzsteuer."
+      },
       skonto: function (dateStr, pct, amount) { return "Bei Zahlung bis zum " + dateStr + " gewähren wir " + pct + " % Skonto; Zahlbetrag dann " + amount + "."; },
       payment: function (due, days) { return "Bitte überweisen Sie den Rechnungsbetrag ohne Abzug bis zum " + due + " (Zahlungsziel: " + days + " Tage nach Rechnungseingang) unter Angabe der Rechnungsnummer auf das unten genannte Konto."; },
       thanks: "Vielen Dank für die gute Zusammenarbeit.",
@@ -1036,10 +1064,14 @@
       thPos: "No.", thDesc: "Description (quantity and type of goods / services)", thQty: "Qty", thUnit: "Unit",
       thPriceR: "Unit price (net)", thPriceK: "Unit price", thTotalR: "Total (net)", thTotalK: "Total",
       lNo: "Invoice no.:", lDate: "Invoice date:", lService: "Service date:", lCustno: "Customer no.:",
-      lTax: "Tax number:", lVatid: "VAT ID:",
+      lTax: "Tax number:", lVatid: "VAT ID:", lCvat: "Customer VAT ID:",
       lNet: "Subtotal (net)", lGrandR: "Invoice total (gross)", lGrandK: "Invoice total",
       vatLabel: function (r) { return "plus " + r + "\u00a0% VAT"; },
-      kuNote: "In accordance with Section 19 of the German VAT Act (UStG), no VAT is charged (small business exemption).",
+      taxNote: {
+        ku: "In accordance with Section 19 of the German VAT Act (UStG), no VAT is charged (small business exemption).",
+        rc: "Reverse charge \u2013 VAT payable by the recipient (Art. 196 of Council Directive 2006/112/EC). No German VAT charged.",
+        "export": "Place of supply is where the recipient is established; the service is not subject to German VAT (sec. 3a (2) German VAT Act)."
+      },
       skonto: function (dateStr, pct, amount) { return "If paid by " + dateStr + ", an early payment discount of " + pct + " % applies; amount payable " + amount + "."; },
       payment: function (due, days) { return "Please transfer the invoice amount without deduction by " + due + " (payment term: " + days + " days after receipt of invoice) to the account below, quoting the invoice number."; },
       thanks: "Thank you for your business.",
@@ -1278,7 +1310,7 @@
     var p = isNew ? blankProfile() : profileById(editingProfileId);
     if (!p) return;
     PROFILE_FIELDS.forEach(function (k) { p[k] = $("p-" + k).value.trim(); });
-    p.mode = $("p-mode").value === "ku" ? "ku" : "regel";
+    p.mode = ["ku", "rc", "export"].indexOf($("p-mode").value) !== -1 ? $("p-mode").value : "regel";
     p.vatRate = parseFloat($("p-vatrate").value) || 0;
     p.paymentDays = parseInt($("p-days").value, 10) || 0;
     p.skontoPercent = parseFloat($("p-skontopct").value) || 0;
@@ -1315,7 +1347,7 @@
     (inv.positions || []).forEach(function (pos) {
       if (pos.qty !== "" || pos.price !== "") net += parseDE(pos.qty) * parseDE(pos.price);
     });
-    var vat = inv.mode === "ku" ? 0 : Math.round(net * ((inv.vatRate || 0) / 100) * 100) / 100;
+    var vat = inv.mode !== "regel" ? 0 : Math.round(net * ((inv.vatRate || 0) / 100) * 100) / 100;
     return { net: net, vat: vat, gross: net + vat };
   }
 
@@ -1384,7 +1416,7 @@
 
   function renderSheet(inv) {
     var p = profileById(inv.profileId) || blankProfile();
-    document.body.setAttribute("data-mode", inv.mode === "ku" ? "ku" : "regel");
+    document.body.setAttribute("data-mode", inv.mode === "regel" ? "regel" : "ku");
 
     var lang = inv.lang === "en" ? "en" : "de";
     var t9 = L[lang];
@@ -1406,6 +1438,7 @@
     $("s-l-date").textContent = t9.lDate;
     $("s-l-service").textContent = t9.lService;
     $("s-l-custno").textContent = t9.lCustno;
+    $("s-l-cvat").textContent = t9.lCvat;
     $("s-l-tax").textContent = t9.lTax;
     $("s-l-vatid").textContent = t9.lVatid;
     $("s-l-net").textContent = t9.lNet;
@@ -1413,7 +1446,7 @@
     $("s-l-grand-k").textContent = t9.lGrandK;
     $("s-thanks").textContent = t9.thanks;
     $("s-regards").textContent = t9.regards;
-    $("s-kunote").textContent = t9.kuNote;
+    $("s-kunote").textContent = t9.taxNote[inv.mode] || "";
 
     $("s-brand").textContent = p.company;
     $("s-tagline").textContent = p.tagline;
@@ -1435,6 +1468,7 @@
     setMetaRow("m-date", "s-m-date", date ? df.format(date) : "");
     setMetaRow("m-service", "s-m-service", inv.service);
     setMetaRow("m-custno", "s-m-custno", c.custno);
+    setMetaRow("m-cvat", "s-m-cvat", c.vatid);
     setMetaRow("m-tax", "s-m-tax", p.tax);
     setMetaRow("m-vatid", "s-m-vatid", p.vatid);
     $("s-no2").textContent = inv.number || "";
@@ -1516,6 +1550,10 @@
     if (!p || (!p.tax && !p.vatid)) missing.push("Steuernummer oder USt-IdNr. (Profil)");
     if (!c.company && !c.person) missing.push("Empfänger-Name");
     if (!c.street || !c.zip) missing.push("Empfänger-Anschrift");
+    if (inv.mode === "rc") {
+      if (!p || !p.vatid) missing.push("eigene USt-IdNr. (Profil)");
+      if (!c.vatid) missing.push("USt-IdNr. des Kunden (Schritt \u201EKunde\u201C)");
+    }
     if (!inv.number) missing.push("Rechnungsnummer");
     if (!inv.date) missing.push("Rechnungsdatum");
     if (!inv.service) missing.push("Leistungsdatum");
@@ -1762,7 +1800,7 @@
       date: todayISO(),
       service: "",
       paymentDays: profile ? profile.paymentDays : 14,
-      customer: { company: "", person: "", street: "", zip: "", country: "", custno: "" },
+      customer: { company: "", person: "", street: "", zip: "", country: "", custno: "", vatid: "" },
       positions: [{ desc: "", qty: "", unit: "", price: "" }],
       mode: profile ? profile.mode : "regel",
       vatRate: profile ? profile.vatRate : 19,
@@ -1903,7 +1941,8 @@
       c.appendChild(el("span", "dot"));
       var main = el("span", "c-main");
       main.appendChild(el("span", "c-title", p.label || p.company || "(ohne Namen)"));
-      main.appendChild(el("span", "c-sub", [p.company, p.mode === "ku" ? "\u00a7 19 UStG" : "USt " + p.vatRate + " %"].filter(Boolean).join(" \u00b7 ")));
+      var modeLabel = { regel: "USt " + p.vatRate + " %", ku: "\u00a7 19 UStG", rc: "Reverse Charge", "export": "Drittland" }[p.mode] || "";
+      main.appendChild(el("span", "c-sub", [p.company, modeLabel].filter(Boolean).join(" \u00b7 ")));
       c.appendChild(main);
       var edit = el("button", "btn small ghost c-edit", "Bearbeiten");
       edit.type = "button";
@@ -1976,7 +2015,7 @@
           if (!isNew) {
             wiz.draft.customer = {
               company: c.company || "", person: c.person || "", street: c.street || "",
-              zip: c.zip || "", country: c.country || "", custno: c.custno || ""
+              zip: c.zip || "", country: c.country || "", custno: c.custno || "", vatid: c.vatid || ""
             };
           }
           renderWizard();
@@ -1999,13 +2038,15 @@
     var inZip     = textInput("w-c-zip", c.zip);
     var inCountry = textInput("w-c-country", c.country, { placeholder: "nur bei Ausland" });
     var inNo      = textInput("w-c-no", c.custno, { placeholder: "optional" });
+    var inCVat    = textInput("w-c-vatid", c.vatid, { placeholder: "z. B. CZ12345678 \u2013 bei EU-Firmenkunden" });
     grid.append(
       field("Firma", inCompany, "err-c-name"),
       field("Ansprechpartner / z. Hd.", inPerson),
       field("Straße Hausnummer", inStreet, "err-c-street"),
       field("PLZ Ort", inZip, "err-c-zip"),
       field("Land", inCountry),
-      field("Kundennummer", inNo)
+      field("Kundennummer", inNo),
+      field("USt-IdNr. des Kunden", inCVat, "err-c-vatid")
     );
     body.appendChild(grid);
 
@@ -2013,7 +2054,8 @@
       wiz.draft.customer = {
         company: inCompany.value.trim(), person: inPerson.value.trim(),
         street: inStreet.value.trim(), zip: inZip.value.trim(),
-        country: inCountry.value.trim(), custno: inNo.value.trim()
+        country: inCountry.value.trim(), custno: inNo.value.trim(),
+        vatid: inCVat.value.trim()
       };
       renderMini();
     });
@@ -2092,7 +2134,7 @@
     function updateTotal() {
       var t = computeTotals(wiz.draft);
       total.innerHTML = "";
-      if (wiz.draft.mode === "ku") {
+      if (wiz.draft.mode !== "regel") {
         total.append("Rechnungsbetrag: ");
         total.appendChild(el("strong", "", fmt.format(t.gross)));
       } else {
@@ -2191,7 +2233,12 @@
     var grid = el("div", "grid2");
     var selMode = document.createElement("select");
     selMode.id = "w-mode";
-    [["regel", "Mit Umsatzsteuer"], ["ku", "Ohne USt (\u00a7 19 UStG)"]].forEach(function (o) {
+    [
+      ["regel", "Mit deutscher Umsatzsteuer"],
+      ["ku", "Ohne USt \u2013 Kleinunternehmer (\u00a7 19 UStG)"],
+      ["rc", "Reverse Charge \u2013 EU-Ausland (B2B)"],
+      ["export", "Drittland \u2013 nicht im Inland steuerbar"]
+    ].forEach(function (o) {
       var opt = el("option", "", o[1]);
       opt.value = o[0];
       selMode.appendChild(opt);
@@ -2202,12 +2249,26 @@
     grid.append(field("Besteuerung", selMode), fRate);
     body.appendChild(grid);
 
-    function syncRateVis() { fRate.style.visibility = selMode.value === "ku" ? "hidden" : "visible"; }
-    syncRateVis();
+    var modeHint = el("p", "mode-hint");
+    modeHint.id = "w-mode-hint";
+    body.appendChild(modeHint);
+
+    var MODE_HINTS = {
+      regel: "",
+      ku: "Der Pflichthinweis zur Steuerbefreiung (\u00a7 19 UStG) erscheint automatisch auf der Rechnung.",
+      rc: "Pflicht: USt-IdNr. von dir (Profil) und vom Kunden (Schritt \u201EKunde\u201C). Der Pflichtvermerk \u201ESteuerschuldnerschaft des Leistungsempf\u00e4ngers\u201C erscheint automatisch; den Umsatz zus\u00e4tzlich in der Zusammenfassenden Meldung (\u00a7 18a UStG) angeben.",
+      "export": "Der Vermerk \u201Enicht im Inland steuerbar\u201C erscheint automatisch. Empfehlung: Unternehmereigenschaft des Kunden dokumentieren (z. B. Registerauszug oder Best\u00e4tigungsschreiben)."
+    };
+
+    function syncMode() {
+      fRate.style.visibility = selMode.value === "regel" ? "visible" : "hidden";
+      modeHint.textContent = MODE_HINTS[selMode.value] || "";
+    }
+    syncMode();
 
     selMode.addEventListener("change", function () {
-      d.mode = selMode.value === "ku" ? "ku" : "regel";
-      syncRateVis();
+      d.mode = selMode.value;
+      syncMode();
       renderMini();
     });
     inRate.addEventListener("input", function () {
@@ -2328,10 +2389,10 @@
     if (!c.company && !c.person) return;
     var existing = state.customers.find(function (x) { return x.id === wiz.custChoice; });
     if (existing) {
-      Object.assign(existing, { company: c.company, person: c.person, street: c.street, zip: c.zip, country: c.country, custno: c.custno });
+      Object.assign(existing, { company: c.company, person: c.person, street: c.street, zip: c.zip, country: c.country, custno: c.custno, vatid: c.vatid });
       dbSaveCustomer(existing);
     } else {
-      var nc = { id: uid(), company: c.company, person: c.person, street: c.street, zip: c.zip, country: c.country, custno: c.custno };
+      var nc = { id: uid(), company: c.company, person: c.person, street: c.street, zip: c.zip, country: c.country, custno: c.custno, vatid: c.vatid };
       state.customers.push(nc);
       dbSaveCustomer(nc);
     }
